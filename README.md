@@ -17,7 +17,7 @@ Open **http://localhost:4318**. Choose **Start a room**, enter a name, select **
 npm test
 ```
 
-The 15 isolated Node tests cover repeated letters, room permissions, private boards, dictionary validation, attempts, score replay/concurrency, stale rounds, deadlines, persistence, cross-origin protection, room limits, and all four lengths. Browser checks also exercised the real Three.js scene, fullscreen pending requests, concurrent room loading, replay, touch Skip, reduced motion, 360/390px mobile gameplay, and portrait-to-landscape resizing. Existing gameplay checks cover colored feedback, invalid guesses, private boards, scores, ties, and rematches.
+The 25 isolated Node tests cover rules, permissions, all four lengths, private boards and archives, score replay/concurrency, deadlines, pause/resume, host handoff, restart preservation, legacy migration, one-year retention, and zero-point final-round losses. Real-browser checks exercised two independent touch sessions, simultaneous guesses, private feedback, shared scoring, host departure, root-link discovery, same-team resume with saved attempts/time, third-round answer visibility, match/player histories, rematches, clipboard copying, and persisted high-contrast colors. Layout checks cover 360/390px portrait and 844px landscape. Earlier loader checks cover the real Three.js scene, fullscreen pending requests, replay, touch Skip, and reduced motion.
 
 ## Rules
 
@@ -27,11 +27,23 @@ Each person who solves earns **one point**, regardless of speed or attempt count
 
 The classic five-letter rules follow the [New York Times Wordle help](https://help.nytimes.com/24611727334932-Wordle). Multiplayer, selectable lengths, scoring, and timed rounds are wordlle with Ishita variants; this is not an official NYT product.
 
+## Saved teams, history and sharing
+
+- **Continue with your team:** reopen the same link and browser. The home screen lists your unfinished rooms; **Continue with team** returns to the same roster, round, private guesses and scores. A paused room link also offers **Resume with team**.
+- **Pause and host handoff:** when everyone leaves, an eight-second presence grace confirms departure and saves the remaining clock. One person leaving does not pause an active teammate. An absent host hands control to an active member after the grace; any existing member can resume. Resuming an already-running game never extends its timer. Graceful server restarts save playing rounds as paused.
+- **Game history:** completed matches are archived separately, so rematching resets only the current game. Review every completed answer, outcomes and recorded attempt counts, with your own archived boards. Final results prominently show **Correct word**, even when nobody scores.
+- **All-time leaderboard:** points and wins come from completed games shared with you. Positive tied top scores share a win; all-zero games give nobody a win. There is no public directory of other private teams.
+- **Player history:** view your totals or a teammate's results from games you played together. Another player's guess words and boards stay private, including in archives.
+- **Sharing and contrast:** **Share result** previews a spoiler-free `G/Y/-` grid, with copy and native sharing where supported. If clipboard access is denied, select and copy the displayed text. **High-contrast tiles** uses blue/orange feedback and matching accessible rule labels; the preference survives reloads.
+
+Migration keeps existing identities, memberships, scores and saved boards, and imports saved completed games once. Earlier round boards not recorded by the old version are marked as unrecorded; results already erased by an old rematch cannot be reconstructed.
+
+
 ## Fullscreen sunflower loader
 
 The scene uses GPU shaders and three draw calls to assemble two natural sunflowers from luminous particles: growing stems, branching leaves, golden petals, and brown golden-angle seed cores. It uses Three.js WebGL 2 rather than requiring WebGPU. The visual approach draws on the [particle simulation reference](https://discourse.threejs.org/t/interactive-particle-simulation/67581) and [Three.js ShaderMaterial](https://threejs.org/docs/pages/ShaderMaterial.html); the flower artwork and choreography are procedural, not a prerecorded clip.
 
-The initial bloom runs while fonts and private room state are prepared. The greeting and exit wait for that work to settle. **Skip intro** settles the visual sequence but does not pretend network work has completed. Use the sun/replay control in the header to see the animation again.
+The initial bloom runs while fonts, your saved-game library and private room state are prepared. The greeting and exit wait for that work to settle. **Skip intro** settles the visual sequence but does not pretend network work has completed. Use the sun/replay control in the header to see the animation again.
 
 Subsequent requests lasting over 250ms show the same full-viewport, fully bloomed scene with the real pending-work message. They close as soon as the request finishes; guessing never has a forced six-second animation. Rendering pauses when the loader closes or the tab is hidden. Reduced motion shows a static bloom. If WebGL cannot initialize, an explicit message lets the player continue without the animation.
 
@@ -43,9 +55,9 @@ Three.js **0.181.0** is pinned in `package-lock.json` and served locally from `p
 - Answers, randomness (`crypto.randomInt`), dictionary checks, attempts, deadlines, and scores live on the server. No answer-selection or score-setting endpoint exists.
 - Opponents receive progress and scores, never one another's guess words or tile marks. Running out of attempts does not reveal a word before other players finish.
 - Membership uses random HTTP-only, same-site cookies. Tokens are stored hashed. Reloading or opening another tab retains the same attempts; new identities cannot join a started match.
-- Only the host can start, advance a completed round, or request a rematch. All mutations are checked again after their request body arrives. Stale-round guesses cannot spend attempts in a new round.
+- Only the current host can start, advance a completed round, or request a rematch; existing members may resume a paused round. An active member can inherit an absent host's role after the presence grace. All mutations are checked again after their request body arrives. Stale-round guesses cannot spend attempts in a new round.
 - Mutations are same-origin, input/body sizes are bounded, guesses are throttled, and private dictionaries, server source, and SQLite files cannot be fetched as web assets.
-- SQLite preserves room state and scores across server restarts. Rooms expire after seven days without a saved update; browser identities expire after seven days. Keep browser cookies to retain membership. Clearing cookies loses access to an active match.
+- SQLite preserves team state and completed-game archives across restarts. Sessions renew for one year during use; live rooms expire after one year without a saved update. Archives survive live-room cleanup. Keep the same public hostname and browser cookies: another device, expired identity, or cleared cookies cannot recover your player without an account system.
 
 No browser game can prevent outside word solvers, collusion, or cheating by someone with access to the hosting machine/database. This protects the application boundary; it is not proctoring or authenticated identity verification.
 

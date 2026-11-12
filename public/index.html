@@ -15,6 +15,7 @@
   </style>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/sunflower-loader.css">
+  <link rel="stylesheet" href="/activity.css">
   <link rel="modulepreload" href="/sunflower-scene.js">
   <link rel="modulepreload" href="/vendor/three-0.181.0/three.module.min.js">
   <link rel="modulepreload" href="/vendor/three-0.181.0/three.core.min.js">
@@ -41,6 +42,19 @@
 
   <main>
     <section id="home-view" class="home-view wrap">
+      <section id="activity-dashboard" class="activity-dashboard" aria-labelledby="activity-heading">
+        <div class="activity-heading"><div><p class="eyebrow">Your word garden</p><h2 id="activity-heading">Good to have you back.</h2></div><button id="library-refresh" class="text-button">Refresh garden ↻</button></div>
+        <p id="library-status" class="activity-note" role="status">Finding your teams and completed games…</p>
+        <button id="library-retry" class="button secondary" hidden>Try loading again</button>
+        <section class="continue-section" aria-labelledby="continue-heading"><h3 id="continue-heading">Continue with your team</h3><div id="continue-list" class="continue-list"></div></section>
+        <nav class="activity-nav" aria-label="Your activity"><a href="#game-history">Game history</a><a href="#all-time-leaderboard">Leaderboard</a><a href="#player-history">Player history</a></nav>
+        <div class="activity-columns">
+          <section id="game-history" class="activity-section" aria-labelledby="game-history-heading"><p class="eyebrow">The words we grew</p><h3 id="game-history-heading">Game history</h3><p class="activity-note">Completed matches, kept across rematches.</p><div id="game-list" class="game-list"></div></section>
+          <section id="all-time-leaderboard" class="activity-section" aria-labelledby="all-time-heading"><p class="eyebrow">A little friendly competition</p><h3 id="all-time-heading">All-time leaderboard</h3><p class="activity-note">Completed games shared with you. Not a public ranking.</p><ol id="all-time-list" class="all-time-list"></ol></section>
+          <section id="player-history" class="activity-section" aria-labelledby="player-history-heading"><p class="eyebrow">Every little bloom counts</p><h3 id="player-history-heading">Player history</h3><div id="my-stats"></div><p class="activity-note">Choose a teammate to see your shared games. Other players’ guess words stay private.</p><div id="profile-list" class="profile-list"></div></section>
+        </div>
+        <p class="activity-note identity-note">Your place is remembered in this browser. Keep its cookies to return to the same team; another device or cleared cookies cannot restore your player.</p>
+      </section>
       <div class="hero">
         <div class="hero-copy">
           <p class="eyebrow"><span class="small-sun" aria-hidden="true">✳</span> A little friendly competition</p>
@@ -80,7 +94,8 @@
           </section>
           <section id="play-panel" class="play-panel" hidden aria-label="Word guessing board">
             <div class="board-topline"><p id="board-caption">Your little patch</p><div id="timer" class="timer" aria-label="Time remaining"><span aria-hidden="true">◷</span> <span id="timer-value">3:00</span></div></div>
-            <div id="round-result" class="round-result" hidden aria-live="polite"><p class="eyebrow" id="result-label"></p><h2 id="result-heading"></h2><p id="result-description"></p><button id="next-button" class="button primary"></button></div>
+            <section id="paused-panel" class="paused-panel" hidden aria-labelledby="paused-heading"><p class="eyebrow">A little breathing room</p><h2 id="paused-heading">Your team’s game is paused.</h2><p>The same word, guesses and scores are waiting. Any teammate can resume the clock.</p><button id="resume-button" class="button primary">Resume with team →</button></section>
+            <div id="round-result" class="round-result" hidden aria-live="polite"><p class="eyebrow" id="result-label"></p><h2 id="result-heading"></h2><div class="correct-word"><span>Correct word</span><strong id="correct-word"></strong></div><p id="result-description"></p><div class="result-actions"><button id="next-button" class="button primary"></button><button id="share-result" class="button secondary">Share result ↗</button><button id="review-game" class="button secondary" hidden>Review this match</button></div></div>
             <div id="board" class="board" role="group" aria-label="Your guesses"></div>
             <p id="board-message" class="board-message" role="status" aria-live="polite"></p>
             <div id="keyboard" class="keyboard" role="group" aria-label="Letter keyboard"></div>
@@ -98,6 +113,7 @@
   </main>
 
   <footer class="site-footer wrap"><span>wordlle <span class="footer-byline">with Ishita</span><span class="brand-period">.</span></span><p>A small game. A little connection. Something good growing.</p><span class="footer-flower" aria-hidden="true">✳</span></footer>
+  <section class="preferences wrap" aria-label="Display preferences"><label class="contrast-control" for="high-contrast"><input id="high-contrast" type="checkbox"> High-contrast tiles <span>Blue = right spot · orange = elsewhere</span></label></section>
 
   <dialog id="bloom-loader" open data-mode="intro" data-state="loading" data-phase="seed" aria-labelledby="bloom-title" aria-describedby="bloom-status">
     <canvas id="bloom-canvas" aria-hidden="true"></canvas>
@@ -142,6 +158,15 @@
   <dialog id="join-dialog" aria-labelledby="join-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">There’s a place for you</p><h2 id="join-title">Find your people.</h2><p id="join-description" class="dialog-description">Have an invite? Enter your room code and make yourself at home.</p><form id="join-form"><label for="join-name">Your name</label><input id="join-name" name="name" autocomplete="nickname" maxlength="24" required placeholder="What should we call you?"><label for="join-code">Room code</label><input id="join-code" class="code-input" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" pattern="[A-Za-z0-9]{6}" minlength="6" maxlength="6" required placeholder="ABCDEF"><p class="form-error" id="join-error" role="alert"></p><button type="submit" class="button primary full-width">Join the garden <svg aria-hidden="true"><use href="#arrow"/></svg></button><p class="small-note">Rooms welcome new players until the first round starts.</p></form></dialog>
   <dialog id="invite-dialog" aria-labelledby="invite-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">Good company is worth sharing</p><h2 id="invite-title">Send a little invitation.</h2><p class="dialog-description" id="invite-description">Send this link to your people, or share the room code.</p><p class="share-code" id="share-code"></p><label for="invite-link">Your room link</label><input id="invite-link" readonly aria-describedby="copy-status"><button id="copy-button" class="button primary full-width">Copy invite link</button><p id="copy-status" class="small-note" role="status"></p></dialog>
   <dialog id="rules-dialog" aria-labelledby="rules-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">A field guide</p><h2 id="rules-title">How to bloom.</h2><p class="dialog-description">Guess the same mystery word as your friends, on your own private board. The host chooses 4, 5, 6, or 7 letters for the room.</p><ol class="rules-list"><li>You have <strong>six guesses and three minutes</strong> each round. Submit a real English word with your room’s chosen number of letters.</li><li><span class="rule-mark correct">Green</span> means the letter is in the right spot. <span class="rule-mark present">Gold</span> means it belongs somewhere else. <span class="rule-mark absent">Gray</span> means it’s not in the word. Repeated letters are marked only as often as they appear.</li><li>Every solve earns <strong>one point</strong>, whenever you find it. Other players can keep guessing after you finish.</li><li>The answer blooms when everyone is done or time runs out. The host starts the next round. Most points wins; ties are celebrated.</li></ol><p class="small-note">Invite friends before starting. Want a quiet moment? Solo rooms work, too.</p><button class="button primary full-width" data-close>Got it. Let’s grow.</button></dialog>
+  <dialog id="activity-dialog" class="activity-dialog" aria-labelledby="activity-title"><button type="button" class="dialog-close" data-close aria-label="Close history">×</button><p class="eyebrow">Your shared word garden</p><h2 id="activity-title">Game history</h2><div id="activity-content"></div></dialog>
+  <dialog id="result-share-dialog" aria-labelledby="result-share-title">
+    <button type="button" class="dialog-close" data-close aria-label="Close result sharing">×</button>
+    <p class="eyebrow">A little wordplay, no spoilers</p><h2 id="result-share-title">Share your result.</h2>
+    <p class="dialog-description">G = right spot · Y = elsewhere · - = absent. No words or answers are included.</p>
+    <label for="result-share-text">Your spoiler-free result</label><textarea id="result-share-text" rows="10" readonly></textarea>
+    <div class="result-actions"><button id="copy-result" class="button primary">Copy result</button><button id="native-share" class="button secondary" hidden>Share…</button></div>
+    <p id="result-share-status" class="small-note" role="status"></p>
+  </dialog>
 
   <div id="notice" class="notice" hidden role="alert"><span id="notice-text"></span><button id="notice-close" aria-label="Dismiss message">×</button></div>
   <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>

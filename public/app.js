@@ -24,12 +24,18 @@ let lastBoard = '';
 let lastPlayers = '';
 let lastHistory = '';
 let lastAnnouncement = '';
+let library = null;
+let libraryRequest = 0;
+let detailRequest = 0;
+let awaySent = false;
+let pendingResult = null;
 const bloom = createBloomLoader({
   onClose() {
     const nextDialog = queuedDialog;
     queuedDialog = null;
     if (nextDialog) showDialog(nextDialog);
     renderControls();
+    revealPendingResult();
   },
 });
 const loading = bloom.loading;
@@ -88,7 +94,9 @@ function updateConnection() {
   $('connection-text').textContent = connected ? (streamHealthy ? 'Live with your room' : 'Live · backup connection') : 'Reconnecting — guesses paused';
 }
 function connect(code) {
+  if (document.hidden || currentCode !== code) return;
   disconnect();
+  awaySent = false;
   const stream = new EventSource(`/api/rooms/${code}/events`);
   source = stream;
   updateConnection();
@@ -125,6 +133,7 @@ function setView(view) {
 }
 function goHome() {
   navigation++;
+  markAway();
   queuedDialog = null;
   disconnect();
   room = null;
@@ -137,15 +146,19 @@ function goHome() {
   history.pushState(null, '', '/');
   document.title = 'wordlle with Ishita — good words, better company.';
   setView('home');
+  void loadLibrary();
   window.scrollTo({ top: 0 });
 }
 function enterRoom(state) {
   queuedDialog = null;
   for (const dialog of dialogs) if (dialog.open) dialog.close();
   currentCode = state.code;
+  awaySent = false;
+  try { localStorage.setItem('wordbloom-room', state.code); } catch { /* A hint only; membership comes from the server. */ }
   history.replaceState(null, '', `/?room=${state.code}`);
   applyState(state);
-  connect(state.code);
+  if (document.hidden) markAway();
+  else connect(state.code);
   renderControls();
 }
 function openJoin(code = '', description = '') {
@@ -155,15 +168,17 @@ function openJoin(code = '', description = '') {
   $('join-description').textContent = description || 'Have an invite? Enter your room code and make yourself at home.';
   showDialog('join-dialog');
 }
-async function restoreRoom() {
+async function restoreRoom(refreshLibrary = true) {
+  if (refreshLibrary) void loadLibrary();
   const version = ++navigation;
-  disconnect();
-  room = null;
-  draft = '';
-  boardError = '';
-  revision++;
   const rawCode = new URLSearchParams(location.search).get('room');
-  currentCode = (rawCode || '').trim().toUpperCase();
+  const code = (rawCode || '').trim().toUpperCase();
+  if (room && code !== currentCode) markAway();
+  disconnect();
+  if (code !== currentCode) { room = null; draft = ''; boardError = ''; }
+  revision++;
+  busy = false;
+  currentCode = code;
   if (!rawCode) { setView('home'); return; }
   if (!roomPattern.test(currentCode)) {
     setView('home');
@@ -197,7 +212,7 @@ async function restoreRoom() {
 
 function self() { return room?.players.find((player) => player.id === room.selfId); }
 function isHost() { return room?.selfId === room?.hostId; }
-function timeLeft() { return room?.deadline ? Math.max(0, Math.ceil((room.deadline - Date.now() - clockOffset) / 1000)) : 0; }
+function timeLeft() { return room?.status === 'paused' ? Math.max(0, Math.ceil((room.remainingMs || 0) / 1000)) : room?.deadline ? Math.max(0, Math.ceil((room.deadline - Date.now() - clockOffset) / 1000)) : 0; }
 function canGuess() { return room?.status === 'playing' && self()?.status === 'playing' && connected && !busy && !bloom.visible && timeLeft() > 0; }
 function applyState(state) {
   if (state.code !== currentCode) return;
@@ -215,7 +230,7 @@ function applyState(state) {
   lastStateSignature = signature;
   const newRound = !previous || previous.code !== state.code || previous.round !== state.round || (state.status === 'lobby' && previous.status !== 'lobby');
   const newGuess = !newRound && state.guesses.length > previous.guesses.length;
-  if (newRound || newGuess || state.status !== 'playing') {
+  if (newRound || newGuess || ['round-over', 'finished', 'lobby'].includes(state.status)) {
     draft = '';
     boardError = '';
   }
@@ -224,11 +239,30 @@ function applyState(state) {
   document.title = state.status === 'lobby' ? `Room ${state.code} · wordlle with Ishita` : `Round ${state.round}/${state.totalRounds} · wordlle with Ishita`;
   setView('room');
   renderRoom();
-  if (newRound && state.status === 'playing') announce(`Round ${state.round} of ${state.totalRounds}. Find a ${state.wordLength}-letter word. You have six guesses.`);
+  const settled = state.status === 'round-over' || state.status === 'finished';
+  const justSettled = settled && (!previous || previous.status !== state.status || previous.round !== state.round || previous.gameId !== state.gameId);
+  if (justSettled) {
+    announce(`${state.status === 'finished' ? 'Game finished.' : 'Round complete.'} The correct word was ${state.answer}.`);
+    pendingResult = { code: state.code, gameId: state.gameId, round: state.round };
+    revealPendingResult();
+  } else if (newRound && state.status === 'playing') announce(`Round ${state.round} of ${state.totalRounds}. Find a ${state.wordLength}-letter word. You have six guesses.`);
   else if (newGuess) {
     const guess = state.guesses.at(-1);
     announce(`${guess.word}: ${[...guess.word].map((letter, index) => `${letter}, ${markLabels[guess.marks[index]]}`).join('; ')}.`);
-  } else if (previous && previous.status !== state.status && state.status !== 'playing') announce(state.status === 'finished' ? 'The game is finished. Final scores are ready.' : `Round complete. The word was ${state.answer}.`);
+  } else if (previous?.status !== state.status && state.status === 'paused') announce('The team game is paused. Your guesses and remaining time are saved.');
+  if (state.status === 'finished' && (previous?.status !== 'finished' || previous?.gameId !== state.gameId)) void loadLibrary();
+}
+function revealPendingResult() {
+  if (!pendingResult || bloom.visible || document.hidden) return;
+  const target = pendingResult;
+  pendingResult = null;
+  requestAnimationFrame(() => {
+    if (room?.code !== target.code || room.gameId !== target.gameId || room.round !== target.round || !['round-over', 'finished'].includes(room.status) || $('room-view').hidden) return;
+    const result = $('round-result');
+    if (result.getBoundingClientRect().top < 0 || $('correct-word').getBoundingClientRect().bottom > innerHeight) {
+      result.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    }
+  });
 }
 function renderRoom() {
   if (!room) return;
@@ -267,15 +301,18 @@ function renderPlayers() {
     avatar.setAttribute('aria-hidden', 'true');
     const info = document.createElement('div');
     info.className = 'player-info';
-    const name = document.createElement('span');
-    name.className = 'player-name';
+    const name = document.createElement('button');
+    name.type = 'button';
+    name.className = 'player-name profile-button';
+    name.disabled = !player.profileId;
+    name.addEventListener('click', () => void openProfile(player.profileId));
     name.textContent = player.name;
     const qualifier = document.createElement('small');
     qualifier.textContent = [player.id === room.selfId ? 'you' : '', player.id === room.hostId ? 'host' : ''].filter(Boolean).join(' · ');
     name.append(qualifier);
     const status = document.createElement('span');
     status.className = 'player-status';
-    const progress = room.status === 'lobby' ? 'Ready to grow' : player.status === 'solved' ? `Solved · ${player.guessCount}/6 guesses` : player.status === 'out' ? `${player.guessCount}/6 guesses · finished` : room.status !== 'playing' ? `${player.guessCount}/6 guesses · round ended` : `${player.guessCount}/6 guesses planted`;
+    const progress = room.status === 'lobby' ? 'Ready to grow' : player.status === 'solved' ? `Solved · ${player.guessCount}/6 guesses` : player.status === 'out' ? `${player.guessCount}/6 guesses · finished` : room.status === 'paused' ? `${player.guessCount}/6 guesses · paused` : room.status !== 'playing' ? `${player.guessCount}/6 guesses · round ended` : `${player.guessCount}/6 guesses planted`;
     status.textContent = `${progress}${player.online ? '' : ' · offline'}`;
     info.append(name, status);
     const score = document.createElement('span');
@@ -335,7 +372,9 @@ function renderResult() {
   $('round-result').hidden = !ended;
   if (!ended) return;
   const final = room.status === 'finished';
-  $('result-label').textContent = final ? 'Every good garden deserves a celebration' : `Round ${room.round} · the word was`;
+  $('result-label').textContent = final ? 'Every good garden deserves a celebration' : `Round ${room.round} complete`;
+  $('correct-word').textContent = room.answer || 'Not recorded';
+  $('review-game').hidden = !final || !room.gameId;
   if (final) {
     const best = Math.max(...room.players.map((player) => player.score));
     const winners = room.players.filter((player) => player.score === best);
@@ -344,8 +383,8 @@ function renderResult() {
     $('result-heading').textContent = best === 0 ? 'A fresh start is always in season.' : `${names.join(' & ')} ${winners.length === 1 && winners[0].id !== room.selfId ? 'wins' : 'win'}!`;
     $('result-description').textContent = `The last word was ${room.answer}. ${best === 0 ? `${names.join(' & ')} ${winners.length > 1 ? 'tie' : 'finished'} at 0 points. Another round of growth?` : `${winners.length > 1 ? 'Tied at' : 'Finishing with'} ${best} ${best === 1 ? 'point' : 'points'}. A little company makes every word better.`}${isHost() ? '' : ' Waiting for your host to start a rematch.'}`;
   } else {
-    $('result-heading').classList.add('answer-word');
-    $('result-heading').textContent = room.answer;
+    $('result-heading').classList.remove('answer-word');
+    $('result-heading').textContent = 'A little wiser, together.';
     const solved = room.players.filter((player) => player.status === 'solved').length;
     $('result-description').textContent = `${solved} of ${room.players.length} ${room.players.length === 1 ? 'player found' : 'players found'} it.${isHost() ? ' Ready to plant the next word?' : ' Your host will start the next round.'}`;
   }
@@ -372,6 +411,8 @@ function renderControls() {
   $('start-button').disabled = busy || !connected;
   $('next-button').hidden = !isHost();
   $('next-button').disabled = busy || !connected;
+  $('paused-panel').hidden = room.status !== 'paused';
+  $('resume-button').disabled = busy;
   for (const key of $('keyboard').querySelectorAll('button')) key.disabled = !canGuess();
   renderBoardMessage();
 }
@@ -384,9 +425,10 @@ function renderBoardMessage() {
   else if (!connected) message = 'The connection is taking a breath. Your guesses are safe; typing resumes when we reconnect.';
   else if (room.status === 'finished') message = 'A whole garden of words. Thanks for growing together.';
   else if (room.status === 'round-over') message = 'One word down. A little wiser for the next.';
+  else if (room.status === 'paused') message = 'Your word and attempts are saved. Resume with your team when you’re ready; the answer stays hidden.';
   else if (busy) message = 'Checking your word…';
-  else if (player?.status === 'solved') message = 'You found it! One point planted. Let’s give the others room to bloom.';
-  else if (player?.status === 'out') message = 'All six guesses planted. The word stays hidden until everyone finishes.';
+  else if (player?.status === 'solved') message = 'You found it! One point planted. The answer unlocks when everyone finishes or time runs out.';
+  else if (player?.status === 'out') message = 'All six guesses planted. The answer unlocks when everyone finishes or time runs out. Your teammates can keep playing.';
   else if (room.status === 'playing' && timeLeft() === 0) message = 'Time’s up. Waiting for the round to settle…';
   $('board-message').textContent = message;
   $('board-caption').textContent = player?.status === 'solved' ? 'A little victory. Nicely grown.' : `${room.wordLength} letters · your private board`;
@@ -394,14 +436,14 @@ function renderBoardMessage() {
 function tick() {
   if (!room || room.status === 'lobby') return;
   const seconds = timeLeft();
-  $('timer').hidden = room.status !== 'playing';
-  if (room.status !== 'playing') return;
+  $('timer').hidden = room.status !== 'playing' && room.status !== 'paused';
+  if (room.status !== 'playing' && room.status !== 'paused') return;
   const remaining = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-  $('timer-value').textContent = remaining;
-  $('timer').setAttribute('aria-label', `Time remaining: ${Math.floor(seconds / 60)} minutes, ${seconds % 60} seconds`);
+  $('timer-value').textContent = `${remaining}${room.status === 'paused' ? ' · paused' : ''}`;
+  $('timer').setAttribute('aria-label', `${room.status === 'paused' ? 'Paused with' : 'Time remaining:'} ${Math.floor(seconds / 60)} minutes, ${seconds % 60} seconds`);
   $('timer').classList.toggle('urgent', seconds <= 30);
-  if (seconds === 30) announce('Thirty seconds left in this round.');
-  if (seconds === 0) renderControls();
+  if (room.status === 'playing' && seconds === 30) announce('Thirty seconds left in this round.');
+  if (room.status === 'playing' && seconds === 0) renderControls();
 }
 async function submitGuess() {
   if (!canGuess()) return;
@@ -453,17 +495,18 @@ function typeKey(key) {
   renderBoardMessage();
 }
 async function roomAction(action) {
-  if (!room || busy || !connected || !isHost()) return;
+  if (!room || busy || document.hidden || (action !== 'resume' && (!connected || !isHost()))) return;
   const code = room.code;
   const startedAt = revision;
   const version = navigation;
   busy = true;
   renderControls();
-  loading(true, action === 'rematch' ? 'Making room for another bloom…' : 'Planting a new round…');
+  loading(true, action === 'resume' ? 'Returning to your team’s word…' : action === 'rematch' ? 'Making room for another bloom…' : 'Planting a new round…');
   try {
     const body = action === 'next' ? { round: room.round } : {};
     const state = await api(`/api/rooms/${code}/${action}`, body);
     if (version === navigation && startedAt === revision && code === currentCode) applyState(state);
+    if (action === 'rematch') void loadLibrary();
   } catch (error) { if (version === navigation) notice(error.message); }
   finally {
     if (version === navigation) { busy = false; renderControls(); }
@@ -498,6 +541,221 @@ async function submitRoomForm(event, type) {
     submit.disabled = false;
     loading(false);
   }
+}
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+function actionButton(text, action, className = 'button secondary') {
+  const button = element('button', className, text);
+  button.type = 'button';
+  button.addEventListener('click', action);
+  return button;
+}
+function dateLabel(value) {
+  return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date not recorded';
+}
+function statsView(player) {
+  const list = element('dl', 'stats-grid');
+  for (const [label, value] of [['Points', player.points], ['Games', player.games], ['Wins', player.wins], ['Rounds', player.rounds], ['Solved', player.solved], ['Solve rate', `${player.accuracy}%`]]) {
+    const cell = element('div');
+    cell.append(element('dt', '', label), element('dd', '', String(value)));
+    list.append(cell);
+  }
+  return list;
+}
+function gameCard(game) {
+  const card = element('article', 'game-card');
+  card.append(element('p', 'game-meta', `${dateLabel(game.finishedAt)} · ${game.wordLength} letters · ${game.totalRounds} rounds`));
+  const scores = element('div', 'game-scores');
+  for (const player of game.players) scores.append(actionButton(`${player.name} · ${player.score} ${player.score === 1 ? 'pt' : 'pts'}${game.winners.includes(player.id) ? ' · winner' : ''}`, () => void openProfile(player.id), 'profile-button'));
+  card.append(scores, actionButton('Review match →', () => void openGame(game.id), 'button secondary review-match'));
+  return card;
+}
+async function loadLibrary() {
+  const request = ++libraryRequest;
+  $('library-refresh').disabled = true;
+  $('library-retry').hidden = true;
+  $('library-status').textContent = library ? 'Refreshing your garden…' : 'Finding your teams and completed games…';
+  try {
+    const data = await api('/api/library');
+    if (request !== libraryRequest) return;
+    library = data;
+    renderLibrary();
+    $('library-status').textContent = data.me ? `Welcome back, ${data.me.name}. Your teams and completed games are up to date.` : 'Start or join a room to grow your first word garden.';
+  } catch (error) {
+    if (request !== libraryRequest) return;
+    $('activity-dashboard').hidden = false;
+    $('library-status').textContent = `${error.message}${library ? ' Showing your last loaded activity below.' : ' Your activity could not be loaded; this is not an empty history.'}`;
+    $('library-retry').hidden = false;
+  } finally {
+    if (request === libraryRequest) $('library-refresh').disabled = false;
+  }
+}
+function renderLibrary() {
+  const { me, rooms, games, leaderboard } = library;
+  $('activity-dashboard').hidden = !me;
+  $('home-view').classList.toggle('returning-player', Boolean(me));
+  $('activity-heading').textContent = me ? 'Pick up where you planted.' : 'Your garden starts here.';
+  const active = rooms.filter((item) => item.status !== 'finished');
+  $('continue-list').replaceChildren(...active.map((item) => {
+    const card = element('article', 'continue-card');
+    card.append(element('p', 'eyebrow', item.status === 'paused' ? 'Saved & paused' : item.status === 'lobby' ? 'Your team is gathering' : item.status === 'round-over' ? 'Ready for the next word' : 'Your team is playing'));
+    card.append(element('h4', '', `Room ${item.code}`), element('p', 'team-names', item.players.map((player) => player.name).join(' · ')));
+    const remaining = item.status === 'paused' && item.remainingMs !== null ? ` · ${Math.ceil(item.remainingMs / 1000)}s saved` : '';
+    card.append(element('p', 'activity-note', `${item.wordLength} letters · ${item.status === 'lobby' ? `${item.totalRounds} rounds` : `round ${item.round}/${item.totalRounds}`}${remaining}`));
+    card.append(actionButton('Continue with team →', (event) => void continueRoom(item.code, event.currentTarget), 'button primary continue-room'));
+    return card;
+  }));
+  if (!active.length) $('continue-list').append(element('p', 'activity-empty', 'No unfinished team rooms. Start a room or choose Join friends below.'));
+  $('game-list').replaceChildren(...games.map(gameCard));
+  if (!games.length) $('game-list').append(element('p', 'activity-empty', 'No completed games recorded yet. Finish a match to keep its results here.'));
+  $('all-time-list').replaceChildren(...leaderboard.map((player) => {
+    const row = element('li', 'ranking-row');
+    row.append(element('span', 'ranking-number', `#${player.rank}`), actionButton(player.name, () => void openProfile(player.id), 'profile-button'), element('span', 'ranking-points', `${player.points} pts · ${player.wins} wins`));
+    return row;
+  }));
+  if (!leaderboard.length) $('all-time-list').append(element('li', 'activity-empty', 'No completed-game rankings yet.'));
+  $('my-stats').replaceChildren();
+  if (me) $('my-stats').append(element('p', 'my-stats-name', `${me.name} · your all-time stats`), statsView(me), actionButton('Your full player history →', () => void openProfile(me.id), 'text-button'));
+  else $('my-stats').append(element('p', 'activity-empty', 'Your own stats will appear when you join or start a room in this browser.'));
+  const teammates = new Map(leaderboard.map((player) => [player.id, player]));
+  for (const item of rooms) for (const player of item.players) if (player.profileId) teammates.set(player.profileId, { id: player.profileId, name: player.name });
+  if (me) teammates.delete(me.id);
+  $('profile-list').replaceChildren(...[...teammates.values()].map((player) => actionButton(`${player.name} ↗`, () => void openProfile(player.id), 'profile-chip')));
+  if (!teammates.size) $('profile-list').append(element('p', 'activity-empty', 'Teammates will appear here after you share a room.'));
+}
+async function continueRoom(code, button) {
+  const version = ++navigation;
+  if (button) button.disabled = true;
+  loading(true, 'Returning to your team…');
+  try {
+    let state = await api(`/api/rooms/${code}`);
+    if (version !== navigation || document.hidden) return;
+    if (state.status === 'paused') {
+      state = await api(`/api/rooms/${code}/resume`, {});
+      if (version !== navigation || document.hidden) return;
+    }
+    enterRoom(state);
+    window.scrollTo({ top: 0 });
+  } catch (error) { if (version === navigation) notice(error.message); }
+  finally { if (button) button.disabled = false; loading(false); }
+}
+function archivedBoard(guesses) {
+  const board = element('div', 'archived-board');
+  board.setAttribute('role', 'group');
+  board.setAttribute('aria-label', 'Your archived guesses');
+  for (const [index, guess] of guesses.entries()) {
+    const row = element('div', 'archived-row');
+    row.setAttribute('aria-label', `Guess ${index + 1}: ${guess.word}`);
+    for (const [column, letter] of [...guess.word].entries()) {
+      const mark = ['correct', 'present', 'absent'].includes(guess.marks[column]) ? guess.marks[column] : '';
+      const tile = element('span', `archive-tile ${mark}`, letter);
+      tile.setAttribute('aria-label', `${letter}, ${markLabels[mark] || 'mark not recorded'}`);
+      row.append(tile);
+    }
+    board.append(row);
+  }
+  return board;
+}
+function roundReview(round, wordLength, ownBoard) {
+  const card = element('section', 'round-review');
+  card.append(element('h3', '', `Round ${round.round}`));
+  const answer = element('div', 'correct-word');
+  answer.append(element('span', '', 'Correct word'), element('strong', '', round.answer || 'Not recorded'));
+  card.append(answer);
+  if (round.players) {
+    const outcomes = element('ul', 'round-outcomes');
+    for (const player of round.players) outcomes.append(element('li', '', `${player.name} · ${player.status === 'solved' ? 'solved' : 'not solved'} · ${player.guessCount === null ? 'attempts not recorded' : `${player.guessCount}/6 guesses`}`));
+    card.append(outcomes);
+    if (!round.players.length) card.append(element('p', 'activity-note', `Legacy result · solvers: ${round.solvers?.join(', ') || 'none'}. Attempts were not recorded.`));
+  } else card.append(element('p', 'activity-note', `${round.status === 'solved' ? 'Solved' : 'Not solved'} · ${round.guessCount === null ? 'attempts not recorded' : `${round.guessCount}/6 guesses`}`));
+  if (ownBoard) {
+    if (round.guesses?.length) {
+      const details = element('details', 'archived-details');
+      details.append(element('summary', '', 'Your archived board'), archivedBoard(round.guesses));
+      card.append(details, actionButton('Share this round ↗', () => void shareResult(round, wordLength, round.gameId ? 'Completed match' : 'Archived match'), 'text-button'));
+    } else card.append(element('p', 'activity-note', 'Your board was not recorded for this round.'));
+  }
+  return card;
+}
+async function openActivity(kind, id) {
+  const request = ++detailRequest;
+  const version = navigation;
+  $('activity-title').textContent = kind === 'games' ? 'Match review' : 'Player history';
+  $('activity-content').replaceChildren(element('p', 'activity-note', 'Gathering your recorded results…'));
+  showDialog('activity-dialog');
+  try {
+    const data = await api(`/api/${kind}/${encodeURIComponent(id)}`);
+    if (request !== detailRequest || version !== navigation) return;
+    const content = $('activity-content');
+    content.replaceChildren();
+    if (kind === 'games') {
+      $('activity-title').textContent = `Room ${data.roomCode} · match review`;
+      content.append(element('p', 'activity-note', `${dateLabel(data.finishedAt)} · ${data.wordLength} letters · ${data.totalRounds} rounds`), element('p', 'activity-note', 'All answers below are from this completed match. Only your own recorded boards are shown.'));
+      const scores = element('div', 'game-scores');
+      for (const player of data.players) scores.append(actionButton(`${player.name}: ${player.score} points${data.winners.includes(player.id) ? ' · winner' : ''}`, () => void openProfile(player.id), 'profile-button'));
+      content.append(scores, ...data.rounds.map((round) => roundReview(round, data.wordLength, true)));
+      if (!data.rounds.length) content.append(element('p', 'activity-empty', 'No round records were saved for this legacy game.'));
+    } else {
+      $('activity-title').textContent = `${data.player.name} · player history`;
+      const own = id === (library?.me?.id || room?.selfProfileId);
+      content.append(element('p', 'activity-note', own ? 'Your completed-game results in this browser.' : 'Only completed games shared with you. This player’s private guess words are never shown.'), statsView(data.player), element('h3', '', 'Completed games'));
+      content.append(...data.games.map(gameCard));
+      if (!data.games.length) content.append(element('p', 'activity-empty', 'No completed shared games recorded yet.'));
+      content.append(element('h3', '', 'Round history'), ...data.rounds.map((round) => {
+        const card = roundReview(round, round.wordLength, own);
+        card.prepend(element('p', 'game-meta', `${dateLabel(round.finishedAt)} · room ${round.roomCode}`));
+        card.append(actionButton('Review full match →', () => void openGame(round.gameId), 'text-button'));
+        return card;
+      }));
+      if (!data.rounds.length) content.append(element('p', 'activity-empty', 'No completed round history recorded yet.'));
+    }
+  } catch (error) {
+    if (request !== detailRequest || version !== navigation) return;
+    $('activity-content').replaceChildren(element('p', 'form-error', error.message), actionButton('Try again', () => void openActivity(kind, id)));
+  }
+}
+function openGame(id) { return openActivity('games', id); }
+function openProfile(id) { return openActivity('players', id); }
+function shareResult(round, wordLength, label) {
+  if (!Array.isArray(round.guesses)) { notice('This round has no recorded board to share.'); return; }
+  const symbols = { correct: 'G', present: 'Y', absent: '-' };
+  const solved = round.guesses.at(-1)?.marks.every((mark) => mark === 'correct') || false;
+  const text = `wordlle with Ishita\n${label} · round ${round.round} · ${wordLength} letters\n${solved ? round.guesses.length : 'X'}/6${solved ? ' · solved' : ` · ${round.guesses.length} guesses`}\n${round.guesses.map((guess) => guess.marks.map((mark) => symbols[mark] || '-').join('')).join('\n')}\nG = right spot · Y = elsewhere · - = absent`;
+  $('result-share-text').value = text;
+  $('result-share-status').textContent = 'Copy this spoiler-free grid to share with your people.';
+  $('native-share').hidden = typeof navigator.share !== 'function';
+  showDialog('result-share-dialog');
+}
+function markAway() {
+  revision++;
+  if (room && !awaySent) {
+    awaySent = true;
+    const path = `/api/rooms/${room.code}/away`;
+    const body = new Blob(['{}'], { type: 'application/json' });
+    if (!navigator.sendBeacon?.(path, body)) void fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}', keepalive: true }).catch(() => {});
+  }
+  disconnect();
+}
+async function returnVisible() {
+  if (document.hidden) return;
+  if (!room || !currentCode) { if (!$('home-view').hidden) void loadLibrary(); return; }
+  const code = currentCode;
+  const version = navigation;
+  const startedAt = ++revision;
+  awaySent = false;
+  try {
+    const state = await api(`/api/rooms/${code}`);
+    if (version !== navigation || code !== currentCode || document.hidden || revision !== startedAt) return;
+    connected = true;
+    lastSnapshotAt = Date.now();
+    applyState(state);
+    connect(code);
+  } catch (error) { if (version === navigation && code === currentCode && !document.hidden) { renderControls(); notice(error.message); } }
 }
 
 for (const letters of ['QWERTYUIOP', 'ASDFGHJKL', ['ENTER', ...'ZXCVBNM', 'BACKSPACE']]) {
@@ -542,6 +800,41 @@ $('host-form').addEventListener('submit', (event) => void submitRoomForm(event, 
 $('join-form').addEventListener('submit', (event) => void submitRoomForm(event, 'join'));
 $('join-code').addEventListener('input', (event) => { event.target.value = event.target.value.toUpperCase(); });
 $('start-button').addEventListener('click', () => void roomAction('start'));
+$('resume-button').addEventListener('click', () => void roomAction('resume'));
+$('library-refresh').addEventListener('click', () => void loadLibrary());
+$('library-retry').addEventListener('click', () => void loadLibrary());
+$('review-game').addEventListener('click', () => { if (room?.status === 'finished') void openGame(room.gameId); });
+$('share-result').addEventListener('click', () => {
+  if (room?.status === 'round-over' || room?.status === 'finished') void shareResult({ round: room.round, guesses: room.guesses }, room.wordLength, `Team game · ${room.totalRounds} rounds`);
+});
+$('copy-result').addEventListener('click', async () => {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText($('result-share-text').value);
+    $('result-share-status').textContent = 'Copied. No words or answers included.';
+  } catch {
+    $('result-share-text').focus();
+    $('result-share-text').select();
+    $('result-share-status').textContent = 'Select and copy the result above.';
+  }
+});
+$('native-share').addEventListener('click', async () => {
+  try { await navigator.share({ text: $('result-share-text').value }); }
+  catch (error) { $('result-share-status').textContent = error.name === 'AbortError' ? 'Sharing cancelled. You can still copy your result.' : 'Your device could not open sharing. Copy the result instead.'; }
+});
+function applyContrast(high) {
+  document.documentElement.classList.toggle('high-contrast', high);
+  document.querySelector('#rules-dialog .rule-mark.correct').textContent = high ? 'Blue' : 'Green';
+  document.querySelector('#rules-dialog .rule-mark.present').textContent = high ? 'Orange' : 'Gold';
+}
+try { $('high-contrast').checked = localStorage.getItem('wordbloom-contrast') === 'high'; } catch { /* Display preferences are optional. */ }
+applyContrast($('high-contrast').checked);
+$('high-contrast').addEventListener('change', (event) => {
+  applyContrast(event.target.checked);
+  try { localStorage.setItem('wordbloom-contrast', event.target.checked ? 'high' : 'standard'); } catch { /* Display preferences are optional. */ }
+});
+$('activity-dialog').addEventListener('close', () => { detailRequest++; });
+document.querySelector('.brand').addEventListener('click', (event) => { event.preventDefault(); goHome(); });
 $('next-button').addEventListener('click', () => void roomAction(room?.status === 'finished' ? 'rematch' : 'next'));
 $('home-button').addEventListener('click', goHome);
 $('offline-home-button').addEventListener('click', goHome);
@@ -575,12 +868,13 @@ for (const dialog of dialogs) {
   });
 }
 window.addEventListener('popstate', () => void restoreRoom());
-window.addEventListener('online', () => {
-  if (room && !connected) connect(room.code);
+window.addEventListener('online', () => { void returnVisible(); });
+window.addEventListener('pagehide', markAway);
+window.addEventListener('pageshow', (event) => { if (event.persisted) void returnVisible(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { markAway(); renderControls(); }
+  else void returnVisible();
 });
-window.addEventListener('pagehide', disconnect);
-window.addEventListener('pageshow', (event) => { if (event.persisted && room) { connect(room.code); renderControls(); } });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 async function pollRoom() {
   if (!room || !currentCode || document.hidden || busy || pollInFlight || (streamHealthy && Date.now() - lastSnapshotAt < 10000)) return;
   const code = currentCode;
@@ -589,7 +883,7 @@ async function pollRoom() {
   pollInFlight = true;
   try {
     const state = await api(`/api/rooms/${code}`);
-    if (version !== navigation || code !== currentCode || startedAt !== revision || busy) return;
+    if (version !== navigation || code !== currentCode || startedAt !== revision || busy || document.hidden) return;
     connected = true;
     lastSnapshotAt = Date.now();
     applyState(state);
@@ -604,4 +898,4 @@ async function pollRoom() {
 }
 setInterval(() => void pollRoom(), 2500);
 setInterval(tick, 250);
-void bloom.intro(Promise.all([restoreRoom(), document.fonts.ready]));
+void bloom.intro(Promise.all([restoreRoom(false), loadLibrary(), document.fonts.ready]));

@@ -4,18 +4,21 @@ import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { createGameServer, scoreGuess } from '../server.mjs';
 
 const wrongWords = ['CRANE', 'SLATE', 'BRICK', 'MOUND', 'GHOST', 'FJORD'];
 const allowedWords = new Set(['APPLE', ...wrongWords]);
 
-async function game(t, { persistent = false, ...options } = {}) {
+async function game(t, { persistent = false, seed, ...options } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'wordbloom-test-'));
   const settings = {
     dbPath: persistent ? join(directory, 'game.sqlite') : ':memory:',
     answers: ['APPLE'], allowedWords, guessCooldownMs: 0,
     now: () => 1_800_000_000_000, ...options,
   };
+  if (seed) await seed(settings.dbPath);
   let app;
   let base;
   async function start() {
@@ -80,6 +83,16 @@ async function pair(t, options) {
   const path = roomPath(lobby.code);
   ok(await guest.post(`${path}/join`, { name: 'Guest' }));
   return { server, host, guest, path, lobby };
+}
+
+async function completeGame(host, guest, path) {
+  let state = ok(await host.post(`${path}/start`));
+  for (let round = 1; round <= 3; round++) {
+    state = ok(await host.post(`${path}/guess`, { word: 'APPLE', round }));
+    if (guest) state = ok(await guest.post(`${path}/guess`, { word: 'APPLE', round }));
+    if (round < 3) ok(await host.post(`${path}/next`, { round }));
+  }
+  return state;
 }
 
 // Every word is injected: these tests never depend on the production dictionary or randomness.
@@ -267,22 +280,26 @@ test('deadline expiry precedes guesses and never exposes the next round answer',
   assert.ok(expiredByRead.players.every(player => player.score === 0));
 });
 
-test('SQLite restart restores room membership, scores and private boards with the same cookies', async t => {
-  const { server, host, guest, path } = await pair(t, { persistent: true });
+test('SQLite restart pauses and explicitly resumes the same team, scores and private boards', async t => {
+  let now = 1_800_000_000_000;
+  const { server, host, guest, path } = await pair(t, { persistent: true, now: () => now });
   ok(await host.post(`${path}/start`));
   const solved = ok(await host.post(`${path}/guess`, { word: 'APPLE', round: 1 }));
   const guessed = ok(await guest.post(`${path}/guess`, { word: 'CRANE', round: 1 }));
   const hostCookie = host.cookie;
   const guestCookie = guest.cookie;
+  now += 2000;
   await server.restart();
+  now += 600_000;
   const restoredHost = server.client(hostCookie);
   const restoredGuest = server.client(guestCookie);
   const hostState = ok(await restoredHost.get(path));
   const guestState = ok(await restoredGuest.get(path));
   assert.equal(hostState.selfId, solved.selfId);
-  assert.equal(hostState.hostId, solved.hostId);
-  assert.equal(hostState.deadline, solved.deadline);
-  assert.equal(hostState.status, 'playing');
+  assert.equal(hostState.gameId, solved.gameId);
+  assert.equal(hostState.status, 'paused');
+  assert.equal(hostState.deadline, null);
+  assert.equal(hostState.remainingMs, 178_000);
   assert.equal(hostState.answer, null);
   assert.equal(me(hostState).score, 1);
   assert.deepEqual(hostState.guesses, solved.guesses);
@@ -290,13 +307,16 @@ test('SQLite restart restores room membership, scores and private boards with th
   assert.deepEqual(guestState.guesses, guessed.guesses);
   assert.ok(!JSON.stringify(guestState).includes('APPLE'));
   denied(await restoredHost.post(`${path}/guess`, { word: 'APPLE', round: 1 }));
+  const resumed = ok(await restoredGuest.post(`${path}/resume`));
+  assert.equal(resumed.deadline, now + 178_000);
   const ended = ok(await restoredGuest.post(`${path}/guess`, { word: 'APPLE', round: 1 }));
   assert.equal(ended.status, 'round-over');
   assert.ok(ended.players.every(player => player.score === 1));
+  const hostEnd = ok(await restoredHost.get(path));
   await server.restart();
   const restoredEnd = ok(await restoredHost.get(path));
   assert.equal(restoredEnd.answer, 'APPLE');
-  assert.deepEqual(restoredEnd.history, ended.history);
+  assert.deepEqual(restoredEnd.history, hostEnd.history);
   assert.equal(ok(await restoredHost.post(`${path}/next`, { round: 1 })).round, 2);
 });
 
@@ -309,7 +329,7 @@ test('cross-origin mutations and static private-file access are denied', async t
   assert.equal(blockedCreate.headers.get('access-control-allow-origin'), null);
   for (const [action, body] of [
     ['join', { name: 'Intruder' }], ['start', {}], ['guess', { word: 'APPLE', round: 1 }],
-    ['next', { round: 1 }], ['rematch', {}],
+    ['next', { round: 1 }], ['rematch', {}], ['away', {}], ['resume', {}],
   ]) denied(await host.post(`${path}/${action}`, body, foreign), [403]);
   assert.equal(ok(await host.get(path)).status, 'lobby');
   for (const privatePath of [
@@ -323,6 +343,7 @@ test('cross-origin mutations and static private-file access are denied', async t
   assert.ok(cookie);
   assert.match(cookie, /;\s*HttpOnly(?:;|$)/i);
   assert.match(cookie, /;\s*SameSite=Strict(?:;|$)/i);
+  assert.match(cookie, /;\s*Max-Age=31536000(?:;|$)/i);
 });
 
 test('lobbies enforce unique names and an eight-player maximum', async t => {
@@ -468,4 +489,286 @@ test('word length defaults to five and unsupported lengths cannot create rooms',
   for (const wordLength of [0, 3, 8, 4.5, 'wide']) {
     denied(await server.client().post('/api/rooms', { name: 'Host', totalRounds: 3, wordLength }));
   }
+});
+
+test('completed archives, own boards and tied stats survive rematch and restart exactly once', async t => {
+  const { server, host, guest, path } = await pair(t, { persistent: true });
+  const playing = ok(await host.post(`${path}/start`));
+  ok(await host.post(`${path}/guess`, { word: 'CRANE', round: 1 }));
+  ok(await guest.post(`${path}/guess`, { word: 'SLATE', round: 1 }));
+  for (let round = 1; round <= 3; round++) {
+    ok(await host.post(`${path}/guess`, { word: 'APPLE', round }));
+    ok(await guest.post(`${path}/guess`, { word: 'APPLE', round }));
+    if (round < 3) ok(await host.post(`${path}/next`, { round }));
+  }
+  const detail = ok(await host.get(`/api/games/${playing.gameId}`));
+  assert.equal(detail.rounds.length, 3);
+  assert.deepEqual(detail.rounds[0].guesses.map(guess => guess.word), ['CRANE', 'APPLE']);
+  assert.ok(!JSON.stringify(detail).includes('SLATE'));
+  assert.equal(detail.rounds[0].players.find(player => player.id === playing.selfProfileId).guessCount, 2);
+  assert.equal(detail.winners.length, 2);
+  const rematch = ok(await host.post(`${path}/rematch`));
+  assert.notEqual(rematch.gameId, playing.gameId);
+  assert.deepEqual(rematch.history, []);
+  assert.equal(rematch.selfProfileId, playing.selfProfileId);
+  for (let i = 0; i < 3; i++) {
+    const library = ok(await host.get('/api/library'));
+    assert.equal(library.games.length, 1);
+    assert.deepEqual({ ...library.me, id: undefined, name: undefined },
+      { id: undefined, name: undefined, points: 3, games: 1, wins: 1, rounds: 3, solved: 3, accuracy: 100, rank: 1 });
+    assert.ok(library.leaderboard.every(player => player.rank === 1));
+    assert.ok(!JSON.stringify(library).includes('APPLE'));
+    assert.ok(!JSON.stringify(library).includes('CRANE'));
+  }
+  await server.restart();
+  assert.deepEqual(ok(await host.get(`/api/games/${playing.gameId}`)), detail);
+  assert.equal(ok(await host.get('/api/library')).me.points, 3);
+  const own = ok(await host.get(`/api/players/${playing.selfProfileId}`));
+  assert.equal(own.games.length, 1);
+  assert.equal(own.rounds.length, 3);
+  assert.deepEqual(own.rounds[0].guesses.map(guess => guess.word), ['CRANE', 'APPLE']);
+  const teammate = playing.players.find(player => player.id !== playing.selfId);
+  const other = ok(await host.get(`/api/players/${teammate.profileId}`));
+  assert.ok(other.rounds.every(round => round.guesses.length === 0));
+  assert.ok(!JSON.stringify(other).includes('SLATE'));
+});
+
+test('library and profiles disclose only completed games shared with the viewer', async t => {
+  const { server, host, guest, path } = await pair(t);
+  const anonymous = server.client();
+  assert.deepEqual(ok(await anonymous.get('/api/library')), { me: null, rooms: [], games: [], leaderboard: [] });
+  const initial = ok(await host.get('/api/library'));
+  assert.equal(initial.games.length, 0);
+  assert.equal(initial.me.games, 0);
+  assert.equal(initial.leaderboard.length, 2);
+  const guestId = initial.leaderboard.find(player => player.id !== initial.me.id).id;
+  assert.equal(ok(await host.get(`/api/players/${guestId}`)).player.points, 0);
+  const shared = await completeGame(host, guest, path);
+  const hiddenRoom = await create(guest, 'Guest');
+  const hidden = await completeGame(guest, null, roomPath(hiddenRoom.code));
+  const own = ok(await guest.get('/api/library'));
+  assert.equal(own.me.games, 2);
+  assert.equal(own.me.points, 6);
+  const scoped = ok(await host.get(`/api/players/${guestId}`));
+  assert.equal(scoped.player.games, 1);
+  assert.equal(scoped.player.points, 3);
+  assert.deepEqual(scoped.games.map(game => game.id), [shared.gameId]);
+  assert.ok(!JSON.stringify(scoped).includes(hiddenRoom.code));
+  assert.equal(ok(await host.get('/api/library')).leaderboard.find(player => player.id === guestId).points, 3);
+  const outsider = server.client();
+  const outsiderRoom = await create(outsider, 'Outsider');
+  for (const client of [anonymous, outsider]) {
+    denied(await client.get(`/api/games/${shared.gameId}`), [403, 404]);
+    denied(await client.get(`/api/players/${guestId}`), [403, 404]);
+  }
+  denied(await host.get(`/api/games/${hidden.gameId}`), [403, 404]);
+  denied(await host.get(`/api/players/${outsiderRoom.selfProfileId}`), [403, 404]);
+  assert.ok(!JSON.stringify(ok(await outsider.get('/api/library'))).includes(shared.code));
+  const active = ok(await guest.post(`${roomPath(hiddenRoom.code)}/rematch`));
+  denied(await guest.get(`/api/games/${active.gameId}`), [404]);
+});
+
+test('all-away pause preserves departure time, hidden word, boards, scores and roster until explicit resume', async t => {
+  let now = 1_800_000_000_000;
+  const { server, host, guest, path } = await pair(t, { now: () => now, roundMs: 60_000 });
+  const started = ok(await host.post(`${path}/start`));
+  ok(await host.post(`${path}/guess`, { word: 'APPLE', round: 1 }));
+  const board = ok(await guest.post(`${path}/guess`, { word: 'CRANE', round: 1 }));
+  now += 2000;
+  ok(await host.post(`${path}/away`));
+  now += 1000;
+  ok(await guest.post(`${path}/away`));
+  const departedAt = now;
+  now += 120_000;
+  const paused = ok(await guest.get(path));
+  assert.equal(paused.status, 'paused');
+  assert.equal(paused.pausedAt, departedAt);
+  assert.equal(paused.remainingMs, 57_000);
+  assert.equal(paused.deadline, null);
+  assert.equal(paused.answer, null);
+  assert.equal(paused.gameId, started.gameId);
+  assert.deepEqual(paused.guesses, board.guesses);
+  assert.deepEqual(paused.players.map(player => player.id), started.players.map(player => player.id));
+  assert.equal(paused.players.find(player => player.id === started.selfId).score, 1);
+  assert.equal(paused.hostId, paused.selfId);
+  assert.equal(ok(await guest.get('/api/library')).rooms[0].status, 'paused');
+  assert.equal(ok(await guest.get(path)).status, 'paused');
+  denied(await server.client().post(`${path}/join`, { name: 'Late' }), [409]);
+  denied(await host.post(`${path}/next`, { round: 1 }), [403, 409]);
+  const resumed = ok(await guest.post(`${path}/resume`));
+  assert.equal(resumed.deadline, now + 57_000);
+  now += 100;
+  const duplicate = ok(await guest.post(`${path}/resume`));
+  assert.equal(duplicate.deadline, resumed.deadline);
+  assert.deepEqual(duplicate.guesses, board.guesses);
+  assert.equal(duplicate.round, 1);
+  assert.equal(duplicate.answer, null);
+  const ended = ok(await guest.post(`${path}/guess`, { word: 'APPLE', round: 1 }));
+  assert.equal(ended.answer, 'APPLE');
+  assert.ok(ended.players.every(player => player.score === 1));
+});
+
+test('one away member cannot pause a foreground teammate or displace an active host', async t => {
+  let now = 1_800_000_000_000;
+  const { host, guest, path } = await pair(t, { now: () => now, roundMs: 60_000 });
+  const started = ok(await host.post(`${path}/start`));
+  ok(await guest.post(`${path}/away`));
+  now += 6000;
+  ok(await host.get(path));
+  now += 4000;
+  const active = ok(await host.get(path));
+  assert.equal(active.status, 'playing');
+  assert.equal(active.deadline, started.deadline);
+  assert.equal(active.hostId, started.hostId);
+  assert.equal(active.players.find(player => player.id !== active.selfId).online, false);
+  assert.equal(ok(await host.post(`${path}/guess`, { word: 'APPLE', round: 1 })).status, 'playing');
+});
+
+test('host handoff waits for grace and returning host keeps the same membership', async t => {
+  let now = 1_800_000_000_000;
+  const { host, guest, path } = await pair(t, { now: () => now });
+  const started = ok(await host.post(`${path}/start`));
+  ok(await host.post(`${path}/away`));
+  now += 7999;
+  assert.equal(ok(await guest.get(path)).hostId, started.hostId);
+  now++;
+  const handed = ok(await guest.get(path));
+  assert.equal(handed.hostId, handed.selfId);
+  assert.equal(handed.status, 'playing');
+  const returned = ok(await host.get(path));
+  assert.equal(returned.selfId, started.selfId);
+  assert.equal(returned.hostId, handed.hostId);
+  denied(await host.post(`${path}/next`, { round: 1 }), [403]);
+});
+
+test('silent departures pause before an offline deadline can turn the team into a loss', async t => {
+  let now = 1_800_000_000_000;
+  const { host, path } = await pair(t, { now: () => now, roundMs: 60_000 });
+  const started = ok(await host.post(`${path}/start`));
+  now += 120_000;
+  const paused = ok(await host.get(path));
+  assert.equal(paused.status, 'paused');
+  assert.equal(paused.pausedAt, started.serverTime + 8000);
+  assert.equal(paused.remainingMs, 52_000);
+  assert.deepEqual(paused.history, []);
+  assert.equal(paused.answer, null);
+});
+
+test('an active SSE sibling prevents another tab away beacon from pausing or handing off', async t => {
+  let now = 1_800_000_000_000;
+  const { server, host, guest, path } = await pair(t, { now: () => now, roundMs: 60_000 });
+  const started = ok(await host.post(`${path}/start`));
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const response = await fetch(`${server.base}${path}/events`, {
+    headers: { Cookie: host.cookie }, signal: controller.signal,
+  });
+  assert.equal(response.status, 200);
+  ok(await host.post(`${path}/away`));
+  now += 9000;
+  const active = ok(await guest.get(path));
+  assert.equal(active.status, 'playing');
+  assert.equal(active.hostId, started.hostId);
+  assert.equal(active.deadline, started.deadline);
+  assert.equal(active.players.find(player => player.id === started.selfId).online, true);
+  await response.body.cancel();
+});
+
+test('losing the sixth guess in the third round settles the answer and archives zero-point results', async t => {
+  const server = await game(t);
+  const host = server.client();
+  const lobby = await create(host);
+  const path = roomPath(lobby.code);
+  ok(await host.post(`${path}/start`));
+  let final;
+  for (let round = 1; round <= 3; round++) {
+    for (const word of wrongWords) final = ok(await host.post(`${path}/guess`, { word, round }));
+    assert.equal(final.answer, 'APPLE');
+    assert.equal(final.history.at(-1).answer, 'APPLE');
+    assert.equal(final.history.at(-1).players[0].guessCount, 6);
+    if (round < 3) ok(await host.post(`${path}/next`, { round }));
+  }
+  assert.equal(final.status, 'finished');
+  assert.equal(final.round, 3);
+  assert.equal(me(final).score, 0);
+  const detail = ok(await host.get(`/api/games/${final.gameId}`));
+  assert.deepEqual(detail.winners, []);
+  assert.equal(detail.rounds.at(-1).answer, 'APPLE');
+  assert.equal(detail.rounds.at(-1).guesses.length, 6);
+  const stats = ok(await host.get('/api/library')).me;
+  assert.equal(stats.games, 1);
+  assert.equal(stats.wins, 0);
+  assert.equal(stats.solved, 0);
+  assert.equal(stats.rounds, 3);
+});
+
+test('legacy SQLite migrates identities, memberships, scores and recorded boards without inventing earlier attempts', async t => {
+  const now = 1_800_000_000_000;
+  const token = 'x'.repeat(43);
+  const sessionId = 'legacy-session';
+  const legacyPlayer = { id: 'legacy-player', sessionId, name: 'Legacy', score: 1,
+    guesses: [{ word: 'CRANE', marks: scoreGuess('CRANE', 'APPLE') }], status: 'playing', lastGuessAt: now - 1000 };
+  const baseRoom = { code: 'ABCDEF', status: 'playing', round: 2, totalRounds: 3, deadline: now + 120_000,
+    answer: 'APPLE', usedAnswers: ['APPLE', 'APPLE'], history: [{ round: 1, answer: 'APPLE', solvers: ['Legacy'] }],
+    hostId: legacyPlayer.id, players: [legacyPlayer], updated: now - 9 * 86_400_000 };
+  const server = await game(t, {
+    persistent: true, now: () => now,
+    seed(dbPath) {
+      const db = new DatabaseSync(dbPath);
+      db.exec(`CREATE TABLE rooms (code TEXT PRIMARY KEY, data TEXT NOT NULL, updated INTEGER NOT NULL);
+        CREATE TABLE sessions (hash TEXT PRIMARY KEY, id TEXT NOT NULL, expires INTEGER NOT NULL);`);
+      db.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run(createHash('sha256').update(token).digest('hex'), sessionId, now + 1000);
+      const insert = db.prepare('INSERT INTO rooms VALUES (?, ?, ?)');
+      insert.run(baseRoom.code, JSON.stringify(baseRoom), baseRoom.updated);
+      const finished = { ...baseRoom, code: 'GHJKLM', status: 'finished', round: 3, deadline: null,
+        history: [1, 2, 3].map(round => ({ round, answer: 'APPLE', solvers: round === 1 ? ['Legacy'] : [] })),
+        players: [{ ...legacyPlayer, status: 'out', guesses: wrongWords.map(word => ({ word, marks: scoreGuess(word, 'APPLE') })) }] };
+      insert.run(finished.code, JSON.stringify(finished), finished.updated);
+      db.close();
+    },
+  });
+  const host = server.client(`wb_session=${token}`);
+  const migrated = ok(await host.get(roomPath(baseRoom.code)));
+  assert.equal(migrated.status, 'paused');
+  assert.equal(migrated.remainingMs, 120_000);
+  assert.equal(migrated.selfId, legacyPlayer.id);
+  assert.notEqual(migrated.selfProfileId, migrated.selfId);
+  assert.ok(!JSON.stringify(migrated).includes(sessionId));
+  assert.equal(host.cookie, `wb_session=${token}`);
+  assert.equal(me(migrated).score, 1);
+  assert.deepEqual(migrated.guesses, legacyPlayer.guesses);
+  assert.equal(migrated.history[0].players[0].guessCount, null);
+  assert.deepEqual(migrated.history[0].guesses, []);
+  const library = ok(await host.get('/api/library'));
+  assert.equal(library.rooms.length, 2);
+  assert.equal(library.games.length, 1);
+  assert.equal(library.me.points, 1);
+  const detail = ok(await host.get(`/api/games/${library.games[0].id}`));
+  assert.equal(detail.rounds[0].finishedAt, null);
+  assert.equal(detail.rounds[0].players[0].guessCount, null);
+  assert.deepEqual(detail.rounds[0].guesses, []);
+  assert.equal(detail.rounds[2].players[0].guessCount, 6);
+  assert.equal(detail.rounds[2].guesses.length, 6);
+  await server.restart();
+  assert.equal(ok(await host.get(roomPath(baseRoom.code))).gameId, migrated.gameId);
+  assert.equal(ok(await host.get('/api/library')).games.length, 1);
+});
+
+test('one-year sliding identity and room retention do not expire durable archives with old live rooms', async t => {
+  let now = 1_800_000_000_000;
+  const server = await game(t, { persistent: true, now: () => now });
+  const host = server.client();
+  const created = await host.post('/api/rooms', { name: 'Host', totalRounds: 3 });
+  const lobby = ok(created);
+  assert.match(created.headers.getSetCookie()[0], /Max-Age=31536000/);
+  const ended = await completeGame(host, null, roomPath(lobby.code));
+  now += 300 * 86_400_000;
+  assert.equal(ok(await host.get('/api/library')).rooms.length, 1);
+  now += 70 * 86_400_000;
+  await server.restart();
+  const library = ok(await host.get('/api/library'));
+  assert.equal(library.rooms.length, 0);
+  assert.equal(library.games.length, 1);
+  assert.equal(library.me.points, 3);
+  assert.equal(ok(await host.get(`/api/games/${ended.gameId}`)).rounds.length, 3);
 });
