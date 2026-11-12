@@ -1,6 +1,6 @@
-# Wordbloom
+# wordlle with Ishita
 
-Private multiplayer word guessing, with a paper-cutout botanical UI and an animated ASCII sunflower loader. No package dependencies, accounts, API keys, or paid word API.
+Private multiplayer word guessing, with a paper-cutout botanical UI, an animated ASCII sunflower loader, and a sunflower-bloom / “Welcome Ishita” intro. The greeting uses staggered letter reveals and a paper-lift transition; it is skippable and respects reduced-motion settings. No package dependencies, accounts, API keys, or paid word API.
 
 ## Run
 
@@ -24,7 +24,7 @@ Everyone gets the same randomly selected word and an independent board. Six vali
 
 Each person who solves earns **one point**, regardless of speed or attempt count. Others can keep playing after someone solves. The answer is revealed only once everyone finishes or the server deadline expires. The host advances rounds; highest score wins, including ties. Rematches reset scores, retain the roster and word length, and reopen invitations.
 
-The classic five-letter rules follow the [New York Times Wordle help](https://help.nytimes.com/24611727334932-Wordle). Multiplayer, selectable lengths, scoring, and timed rounds are Wordbloom variants; this is not an official NYT product.
+The classic five-letter rules follow the [New York Times Wordle help](https://help.nytimes.com/24611727334932-Wordle). Multiplayer, selectable lengths, scoring, and timed rounds are wordlle with Ishita variants; this is not an official NYT product.
 
 ## Fair play and privacy
 

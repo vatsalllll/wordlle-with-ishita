@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f4eb">
-  <meta name="description" content="A little word game for your favorite people. Gather in a private room, find the same mystery word, and grow your score together.">
-  <title>Wordbloom — good words, better company.</title>
+  <meta name="description" content="wordlle with Ishita. Gather your favorite people in a private room, find the same mystery word, and grow your score together.">
+  <title>wordlle with Ishita — good words, better company.</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" type="module"></script>
@@ -25,7 +25,7 @@
   </defs></svg>
 
   <header class="site-header wrap">
-    <a href="/" class="brand" aria-label="Wordbloom home"><svg class="brand-flower" aria-hidden="true"><use href="#flower"/></svg>wordbloom<span class="brand-period">.</span></a>
+    <a href="/" class="brand" aria-label="wordlle with Ishita home"><svg class="brand-flower" aria-hidden="true"><use href="#flower"/></svg><span class="brand-lockup">wordlle<span class="brand-period">.</span><span class="brand-byline">with Ishita</span></span></a>
     <div class="header-right"><span class="header-note">A word game, in good company.</span><button class="text-button" id="rules-button">How to play <span aria-hidden="true">↗</span></button></div>
   </header>
 
@@ -87,7 +87,25 @@
     <section id="offline-panel" class="offline-panel wrap" hidden aria-labelledby="offline-heading"><svg class="lobby-flower" aria-hidden="true"><use href="#flower"/></svg><p class="eyebrow">A moment in the shade</p><h1 id="offline-heading">The garden is resting.</h1><p id="offline-description">We can’t reach the game server right now. Your room may still be there when the connection returns.</p><div class="hero-actions"><button id="retry-button" class="button primary">Try again</button><button id="offline-home-button" class="button secondary">Back home</button></div></section>
   </main>
 
-  <footer class="site-footer wrap"><span>wordbloom<span class="brand-period">.</span></span><p>A small game. A little connection. Something good growing.</p><span class="footer-flower" aria-hidden="true">✳</span></footer>
+  <footer class="site-footer wrap"><span>wordlle <span class="footer-byline">with Ishita</span><span class="brand-period">.</span></span><p>A small game. A little connection. Something good growing.</p><span class="footer-flower" aria-hidden="true">✳</span></footer>
+
+  <dialog id="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-description">
+    <p class="welcome-kicker">A little sunshine. A little wordplay.</p>
+    <div class="welcome-art" aria-hidden="true">
+      <svg class="welcome-orbit" viewBox="0 0 180 170"><circle cx="90" cy="85" r="74"/><circle class="orbit-inner" cx="90" cy="85" r="61"/></svg>
+      <pre class="welcome-flower"><span class="welcome-crown">  \ | /  
+ --<span class="welcome-heart">(@)</span>-- 
+  / | \  </span><span class="welcome-stem">    |    
+   \|/   </span></pre>
+    </div>
+    <h1 id="welcome-title" aria-label="Welcome Ishita">
+      <span class="welcome-word" aria-hidden="true"><span style="--i:0">W</span><span style="--i:1">e</span><span style="--i:2">l</span><span style="--i:3">c</span><span style="--i:4">o</span><span style="--i:5">m</span><span style="--i:6">e</span></span>
+      <em class="welcome-name" aria-hidden="true"><span style="--i:0">I</span><span style="--i:1">s</span><span style="--i:2">h</span><span style="--i:3">i</span><span style="--i:4">t</span><span style="--i:5">a</span></em>
+    </h1>
+    <p id="welcome-description">Good words bloom in good company.<br>Your little garden is ready.</p>
+    <button type="button" class="welcome-skip" data-close autofocus>Let’s play <span aria-hidden="true">↗</span></button>
+    <p class="welcome-signature">wordlle with Ishita</p>
+  </dialog>
 
   <dialog id="host-dialog" aria-labelledby="host-title">
     <button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button>

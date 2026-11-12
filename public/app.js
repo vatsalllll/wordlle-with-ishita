@@ -141,7 +141,7 @@ function goHome() {
   busy = false;
   for (const dialog of dialogs) if (dialog.open) dialog.close();
   history.pushState(null, '', '/');
-  document.title = 'Wordbloom — good words, better company.';
+  document.title = 'wordlle with Ishita — good words, better company.';
   setView('home');
   window.scrollTo({ top: 0 });
 }
@@ -226,7 +226,7 @@ function applyState(state) {
   }
   room = state;
   revision++;
-  document.title = state.status === 'lobby' ? `Room ${state.code} · Wordbloom` : `Round ${state.round}/${state.totalRounds} · Wordbloom`;
+  document.title = state.status === 'lobby' ? `Room ${state.code} · wordlle with Ishita` : `Round ${state.round}/${state.totalRounds} · wordlle with Ishita`;
   setView('room');
   renderRoom();
   if (newRound && state.status === 'playing') announce(`Round ${state.round} of ${state.totalRounds}. Find a ${state.wordLength}-letter word. You have six guesses.`);
@@ -611,4 +611,6 @@ async function pollRoom() {
 }
 setInterval(() => void pollRoom(), 2500);
 setInterval(tick, 250);
-void restoreRoom();
+const welcomeTimer = setTimeout(() => $('welcome-dialog').close(), matchMedia('(prefers-reduced-motion: reduce)').matches ? 900 : 3900);
+$('welcome-dialog').addEventListener('close', () => { clearTimeout(welcomeTimer); void restoreRoom(); }, { once: true });
+showDialog('welcome-dialog');
