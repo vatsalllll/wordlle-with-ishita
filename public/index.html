@@ -42,25 +42,12 @@
 
   <main>
     <section id="home-view" class="home-view wrap">
-      <section id="activity-dashboard" class="activity-dashboard" aria-labelledby="activity-heading">
-        <div class="activity-heading"><div><p class="eyebrow">Your word garden</p><h2 id="activity-heading">Good to have you back.</h2></div><button id="library-refresh" class="text-button">Refresh garden ↻</button></div>
-        <p id="library-status" class="activity-note" role="status">Finding your teams and completed games…</p>
-        <button id="library-retry" class="button secondary" hidden>Try loading again</button>
-        <section class="continue-section" aria-labelledby="continue-heading"><h3 id="continue-heading">Continue with your team</h3><div id="continue-list" class="continue-list"></div></section>
-        <nav class="activity-nav" aria-label="Your activity"><a href="#game-history">Game history</a><a href="#all-time-leaderboard">Leaderboard</a><a href="#player-history">Player history</a></nav>
-        <div class="activity-columns">
-          <section id="game-history" class="activity-section" aria-labelledby="game-history-heading"><p class="eyebrow">The words we grew</p><h3 id="game-history-heading">Game history</h3><p class="activity-note">Completed matches, kept across rematches.</p><div id="game-list" class="game-list"></div></section>
-          <section id="all-time-leaderboard" class="activity-section" aria-labelledby="all-time-heading"><p class="eyebrow">A little friendly competition</p><h3 id="all-time-heading">All-time leaderboard</h3><p class="activity-note">Completed games shared with you. Not a public ranking.</p><ol id="all-time-list" class="all-time-list"></ol></section>
-          <section id="player-history" class="activity-section" aria-labelledby="player-history-heading"><p class="eyebrow">Every little bloom counts</p><h3 id="player-history-heading">Player history</h3><div id="my-stats"></div><p class="activity-note">Choose a teammate to see your shared games. Other players’ guess words stay private.</p><div id="profile-list" class="profile-list"></div></section>
-        </div>
-        <p class="activity-note identity-note">Your place is remembered in this browser. Keep its cookies to return to the same team; another device or cleared cookies cannot restore your player.</p>
-      </section>
       <div class="hero">
         <div class="hero-copy">
           <p class="eyebrow"><span class="small-sun" aria-hidden="true">✳</span> A little friendly competition</p>
-          <h1>Good words.<br>Better <em>company.</em></h1>
+          <h1>Start a new<br><em>game.</em></h1>
           <p class="hero-description">Your favorite word game, with your favorite people. A private room. The same mystery word. A little room to bloom.</p>
-          <div class="hero-actions"><button class="button primary" id="host-button">Start a room <svg aria-hidden="true"><use href="#arrow"/></svg></button><button class="button secondary" id="join-button">Join friends</button></div>
+          <div class="hero-actions"><button class="button primary" id="host-button">Start a New Game <svg aria-hidden="true"><use href="#arrow"/></svg></button><button class="button secondary" id="join-button">Join friends</button></div>
           <p class="hero-footnote">Free to play <span>·</span> 1–8 players <span>·</span> No account needed</p>
         </div>
         <div class="hero-art" aria-label="An illustrated sunflower beside example Wordle tiles spelling BLOOM">
@@ -76,6 +63,22 @@
           <div class="art-stamp" aria-hidden="true">GROW<br>AS YOU GO<span>✦</span></div>
         </div>
       </div>
+      <section id="activity-dashboard" class="activity-dashboard" aria-labelledby="activity-heading">
+        <div class="activity-heading"><h2 id="activity-heading">Your saved garden</h2><button id="library-refresh" class="text-button">Refresh garden ↻</button></div>
+        <p id="library-status" class="activity-note" role="status">Finding your teams and completed games…</p>
+        <button id="library-retry" class="button secondary" hidden>Try loading again</button>
+        <section class="continue-section" aria-labelledby="continue-heading"><h3 id="continue-heading">Continue with your team</h3><div id="continue-list" class="continue-list"></div></section>
+        <details id="activity-history">
+          <summary>History &amp; stats</summary>
+        <nav class="activity-nav" aria-label="Your activity"><a href="#game-history">Game history</a><a href="#all-time-leaderboard">Leaderboard</a><a href="#player-history">Player history</a></nav>
+        <div class="activity-columns">
+          <section id="game-history" class="activity-section" aria-labelledby="game-history-heading"><p class="eyebrow">The words we grew</p><h3 id="game-history-heading">Game history</h3><p class="activity-note">Completed matches, kept across rematches.</p><div id="game-list" class="game-list"></div></section>
+          <section id="all-time-leaderboard" class="activity-section" aria-labelledby="all-time-heading"><p class="eyebrow">A little friendly competition</p><h3 id="all-time-heading">All-time leaderboard</h3><p class="activity-note">Completed games shared with you. Not a public ranking.</p><ol id="all-time-list" class="all-time-list"></ol></section>
+          <section id="player-history" class="activity-section" aria-labelledby="player-history-heading"><p class="eyebrow">Every little bloom counts</p><h3 id="player-history-heading">Player history</h3><div id="my-stats"></div><p class="activity-note">Choose a teammate to see your shared games. Other players’ guess words stay private.</p><div id="profile-list" class="profile-list"></div></section>
+        </div>
+        <p class="activity-note identity-note">History is saved on the server and linked to this browser’s anonymous cookie, not localStorage. Keep cookies and use the same link to return; another device or cleared cookies cannot restore your player.</p>
+        </details>
+      </section>
       <section class="how-it-grows" aria-labelledby="how-heading">
         <div class="section-intro"><p class="eyebrow">Simple by nature</p><h2 id="how-heading">A little brain food.<br>A good time together.</h2></div>
         <div class="how-step"><span class="step-number">01 /</span><h3>Gather your people</h3><p>Make a private room and share the link. Play with up to seven friends, or enjoy a solo round.</p></div>
@@ -90,7 +93,7 @@
       <div class="game-layout">
         <div class="game-main">
           <section id="lobby-panel" class="lobby-panel" aria-labelledby="lobby-heading">
-            <svg class="lobby-flower" aria-hidden="true"><use href="#flower"/></svg><p class="eyebrow">Good company starts here</p><h2 id="lobby-heading">The garden is gathering.</h2><p id="lobby-description"></p><div class="lobby-details"><span id="lobby-rounds"></span><span id="lobby-length"></span><span>3 minutes / round</span><span>6 guesses / word</span></div><button id="start-button" class="button primary">Let’s play <svg aria-hidden="true"><use href="#arrow"/></svg></button><p class="small-note" id="lobby-note"></p>
+            <svg class="lobby-flower" aria-hidden="true"><use href="#flower"/></svg><p class="eyebrow">Good company starts here</p><h2 id="lobby-heading">The garden is gathering.</h2><p id="lobby-description"></p><div class="lobby-details"><span id="lobby-rounds"></span><span id="lobby-length"></span><span id="lobby-difficulty"></span><span>3 minutes / round</span><span>6 guesses / word</span></div><button id="start-button" class="button primary">Let’s play <svg aria-hidden="true"><use href="#arrow"/></svg></button><p class="small-note" id="lobby-note"></p>
           </section>
           <section id="play-panel" class="play-panel" hidden aria-label="Word guessing board">
             <div class="board-topline"><p id="board-caption">Your little patch</p><div id="timer" class="timer" aria-label="Time remaining"><span aria-hidden="true">◷</span> <span id="timer-value">3:00</span></div></div>
@@ -129,14 +132,14 @@
     </div>
     <div class="bloom-footer">
       <div class="bloom-loading-copy"><p id="bloom-status" role="status" aria-live="polite">Opening your little garden…</p><p id="bloom-error" hidden role="alert"></p></div>
-      <button type="button" id="bloom-skip">Skip intro ↗</button>
+      <button type="button" id="bloom-skip"><span>Skip intro</span><svg aria-hidden="true"><use href="#arrow"/></svg></button>
     </div>
   </dialog>
 
   <dialog id="host-dialog" aria-labelledby="host-title">
     <button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button>
     <p class="eyebrow">Plant the first seed</p><h2 id="host-title">Make room for friends.</h2>
-    <p class="dialog-description">Choose a name, pick your rounds and word length, and we’ll take care of the word-growing.</p>
+    <p class="dialog-description">Choose your name, rounds, word length and level. Everyone in your room plays the same word pool.</p>
     <form id="host-form">
       <label for="host-name">Your name</label><input id="host-name" name="name" autocomplete="nickname" maxlength="24" required placeholder="What should we call you?">
       <fieldset><legend>How many rounds?</legend><div class="round-options">
@@ -150,6 +153,11 @@
         <label><input type="radio" name="wordLength" value="6"><span>6 <small>Branch out</small></span></label>
         <label><input type="radio" name="wordLength" value="7"><span>7 <small>Full bloom</small></span></label>
       </div></fieldset>
+      <fieldset class="difficulty-fieldset" aria-describedby="difficulty-note"><legend>Word difficulty</legend><div class="round-options difficulty-options">
+        <label><input type="radio" name="difficulty" value="easy"><span>Easy <small>Familiar everyday words</small></span></label>
+        <label><input type="radio" name="difficulty" value="medium" checked><span>Medium <small>A standard mixed pool</small></span></label>
+        <label><input type="radio" name="difficulty" value="hard"><span>Hard <small>Trickier words or repeats</small></span></label>
+      </div><p class="small-note" id="difficulty-note">Levels change the word pool, not the rules: six guesses, three minutes and one point per solve. Hard does not require reusing hints.</p></fieldset>
       <p class="form-error" id="host-error" role="alert"></p>
       <button type="submit" class="button primary full-width">Create my room <svg aria-hidden="true"><use href="#arrow"/></svg></button>
       <p class="small-note">Private by default. Just share your invite link.</p>

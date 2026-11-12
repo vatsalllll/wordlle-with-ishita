@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 const dialogs = [...document.querySelectorAll('dialog:not(#bloom-loader)')];
 const roomPattern = /^[A-Z0-9]{6}$/;
 const markLabels = { correct: 'right letter, right spot', present: 'right letter, different spot', absent: 'not in the word' };
+const difficultyLabels = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 let room = null;
 let source = null;
 let connected = false;
@@ -127,6 +128,7 @@ function connect(code) {
   };
 }
 function setView(view) {
+  if (view === 'home') $('activity-history').open = false;
   $('home-view').hidden = view !== 'home';
   $('room-view').hidden = view !== 'room';
   $('offline-panel').hidden = view !== 'offline';
@@ -268,12 +270,13 @@ function renderRoom() {
   if (!room) return;
   const lobby = room.status === 'lobby';
   $('room-code').textContent = room.code;
-  $('room-eyebrow').textContent = lobby ? 'Your private patch' : `${room.wordLength} letters · ${room.totalRounds} rounds · room ${room.code}`;
+  $('room-eyebrow').textContent = lobby ? `Your private patch · ${difficultyLabel(room.difficulty)}` : `${difficultyLabel(room.difficulty)} · ${room.wordLength} letters · ${room.totalRounds} rounds · room ${room.code}`;
   $('room-title').textContent = lobby ? 'Room to bloom.' : room.status === 'finished' ? 'What a lovely word garden.' : `Round ${room.round} of ${room.totalRounds}`;
   $('lobby-panel').hidden = !lobby;
   $('play-panel').hidden = lobby;
   $('lobby-rounds').textContent = `${room.totalRounds} rounds`;
   $('lobby-length').textContent = `${room.wordLength}-letter words`;
+  $('lobby-difficulty').textContent = difficultyLabel(room.difficulty);
   const host = room.players.find((player) => player.id === room.hostId);
   $('lobby-description').textContent = isHost() ? 'Invite your people, then start when you’re ready. Everyone gets the same word and their own board.' : `${host?.name || 'Your host'} will start when everyone is here. Settle in — there’s a good word on the way.`;
   $('lobby-note').textContent = isHost() ? 'Playing solo? You’re welcome to start now. New players can only join before the game begins.' : 'You’re in. Keep this tab open; the first round will appear here.';
@@ -530,7 +533,7 @@ async function submitRoomForm(event, type) {
   submit.disabled = true;
   loading(true, type === 'host' ? 'Planting your room…' : 'Finding your people…');
   try {
-    const state = await api(type === 'host' ? '/api/rooms' : `/api/rooms/${code}/join`, type === 'host' ? { name, totalRounds: Number(data.get('rounds')), wordLength: Number(data.get('wordLength')) } : { name });
+    const state = await api(type === 'host' ? '/api/rooms' : `/api/rooms/${code}/join`, type === 'host' ? { name, totalRounds: Number(data.get('rounds')), wordLength: Number(data.get('wordLength')), difficulty: String(data.get('difficulty')) } : { name });
     if (version !== navigation) return;
     rememberName(name);
     enterRoom(state);
@@ -558,6 +561,9 @@ function actionButton(text, action, className = 'button secondary') {
 function dateLabel(value) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date not recorded';
 }
+function difficultyLabel(value) {
+  return difficultyLabels[value] || 'Classic';
+}
 function statsView(player) {
   const list = element('dl', 'stats-grid');
   for (const [label, value] of [['Points', player.points], ['Games', player.games], ['Wins', player.wins], ['Rounds', player.rounds], ['Solved', player.solved], ['Solve rate', `${player.accuracy}%`]]) {
@@ -569,7 +575,7 @@ function statsView(player) {
 }
 function gameCard(game) {
   const card = element('article', 'game-card');
-  card.append(element('p', 'game-meta', `${dateLabel(game.finishedAt)} · ${game.wordLength} letters · ${game.totalRounds} rounds`));
+  card.append(element('p', 'game-meta', `${dateLabel(game.finishedAt)} · ${difficultyLabel(game.difficulty)} · ${game.wordLength} letters · ${game.totalRounds} rounds`));
   const scores = element('div', 'game-scores');
   for (const player of game.players) scores.append(actionButton(`${player.name} · ${player.score} ${player.score === 1 ? 'pt' : 'pts'}${game.winners.includes(player.id) ? ' · winner' : ''}`, () => void openProfile(player.id), 'profile-button'));
   card.append(scores, actionButton('Review match →', () => void openGame(game.id), 'button secondary review-match'));
@@ -599,18 +605,18 @@ function renderLibrary() {
   const { me, rooms, games, leaderboard } = library;
   $('activity-dashboard').hidden = !me;
   $('home-view').classList.toggle('returning-player', Boolean(me));
-  $('activity-heading').textContent = me ? 'Pick up where you planted.' : 'Your garden starts here.';
+  $('activity-heading').textContent = me ? 'Your saved garden' : 'Your garden starts here.';
   const active = rooms.filter((item) => item.status !== 'finished');
   $('continue-list').replaceChildren(...active.map((item) => {
     const card = element('article', 'continue-card');
     card.append(element('p', 'eyebrow', item.status === 'paused' ? 'Saved & paused' : item.status === 'lobby' ? 'Your team is gathering' : item.status === 'round-over' ? 'Ready for the next word' : 'Your team is playing'));
     card.append(element('h4', '', `Room ${item.code}`), element('p', 'team-names', item.players.map((player) => player.name).join(' · ')));
     const remaining = item.status === 'paused' && item.remainingMs !== null ? ` · ${Math.ceil(item.remainingMs / 1000)}s saved` : '';
-    card.append(element('p', 'activity-note', `${item.wordLength} letters · ${item.status === 'lobby' ? `${item.totalRounds} rounds` : `round ${item.round}/${item.totalRounds}`}${remaining}`));
-    card.append(actionButton('Continue with team →', (event) => void continueRoom(item.code, event.currentTarget), 'button primary continue-room'));
+    card.append(element('p', 'activity-note', `${difficultyLabel(item.difficulty)} · ${item.wordLength} letters · ${item.status === 'lobby' ? `${item.totalRounds} rounds` : `round ${item.round}/${item.totalRounds}`}${remaining}`));
+    card.append(actionButton('Continue with team →', (event) => void continueRoom(item.code, event.currentTarget), 'button secondary continue-room'));
     return card;
   }));
-  if (!active.length) $('continue-list').append(element('p', 'activity-empty', 'No unfinished team rooms. Start a room or choose Join friends below.'));
+  if (!active.length) $('continue-list').append(element('p', 'activity-empty', 'No unfinished team rooms. Start a New Game or choose Join friends above.'));
   $('game-list').replaceChildren(...games.map(gameCard));
   if (!games.length) $('game-list').append(element('p', 'activity-empty', 'No completed games recorded yet. Finish a match to keep its results here.'));
   $('all-time-list').replaceChildren(...leaderboard.map((player) => {
@@ -661,7 +667,7 @@ function archivedBoard(guesses) {
   }
   return board;
 }
-function roundReview(round, wordLength, ownBoard) {
+function roundReview(round, wordLength, ownBoard, difficulty) {
   const card = element('section', 'round-review');
   card.append(element('h3', '', `Round ${round.round}`));
   const answer = element('div', 'correct-word');
@@ -677,7 +683,7 @@ function roundReview(round, wordLength, ownBoard) {
     if (round.guesses?.length) {
       const details = element('details', 'archived-details');
       details.append(element('summary', '', 'Your archived board'), archivedBoard(round.guesses));
-      card.append(details, actionButton('Share this round ↗', () => void shareResult(round, wordLength, round.gameId ? 'Completed match' : 'Archived match'), 'text-button'));
+      card.append(details, actionButton('Share this round ↗', () => void shareResult(round, wordLength, round.gameId ? 'Completed match' : 'Archived match', difficulty), 'text-button'));
     } else card.append(element('p', 'activity-note', 'Your board was not recorded for this round.'));
   }
   return card;
@@ -695,10 +701,10 @@ async function openActivity(kind, id) {
     content.replaceChildren();
     if (kind === 'games') {
       $('activity-title').textContent = `Room ${data.roomCode} · match review`;
-      content.append(element('p', 'activity-note', `${dateLabel(data.finishedAt)} · ${data.wordLength} letters · ${data.totalRounds} rounds`), element('p', 'activity-note', 'All answers below are from this completed match. Only your own recorded boards are shown.'));
+      content.append(element('p', 'activity-note', `${dateLabel(data.finishedAt)} · ${difficultyLabel(data.difficulty)} · ${data.wordLength} letters · ${data.totalRounds} rounds`), element('p', 'activity-note', 'All answers below are from this completed match. Only your own recorded boards are shown.'));
       const scores = element('div', 'game-scores');
       for (const player of data.players) scores.append(actionButton(`${player.name}: ${player.score} points${data.winners.includes(player.id) ? ' · winner' : ''}`, () => void openProfile(player.id), 'profile-button'));
-      content.append(scores, ...data.rounds.map((round) => roundReview(round, data.wordLength, true)));
+      content.append(scores, ...data.rounds.map((round) => roundReview(round, data.wordLength, true, data.difficulty)));
       if (!data.rounds.length) content.append(element('p', 'activity-empty', 'No round records were saved for this legacy game.'));
     } else {
       $('activity-title').textContent = `${data.player.name} · player history`;
@@ -707,8 +713,8 @@ async function openActivity(kind, id) {
       content.append(...data.games.map(gameCard));
       if (!data.games.length) content.append(element('p', 'activity-empty', 'No completed shared games recorded yet.'));
       content.append(element('h3', '', 'Round history'), ...data.rounds.map((round) => {
-        const card = roundReview(round, round.wordLength, own);
-        card.prepend(element('p', 'game-meta', `${dateLabel(round.finishedAt)} · room ${round.roomCode}`));
+        const card = roundReview(round, round.wordLength, own, round.difficulty);
+        card.prepend(element('p', 'game-meta', `${dateLabel(round.finishedAt)} · ${difficultyLabel(round.difficulty)} · ${round.wordLength} letters · room ${round.roomCode}`));
         card.append(actionButton('Review full match →', () => void openGame(round.gameId), 'text-button'));
         return card;
       }));
@@ -721,11 +727,11 @@ async function openActivity(kind, id) {
 }
 function openGame(id) { return openActivity('games', id); }
 function openProfile(id) { return openActivity('players', id); }
-function shareResult(round, wordLength, label) {
+function shareResult(round, wordLength, label, difficulty) {
   if (!Array.isArray(round.guesses)) { notice('This round has no recorded board to share.'); return; }
   const symbols = { correct: 'G', present: 'Y', absent: '-' };
   const solved = round.guesses.at(-1)?.marks.every((mark) => mark === 'correct') || false;
-  const text = `wordlle with Ishita\n${label} · round ${round.round} · ${wordLength} letters\n${solved ? round.guesses.length : 'X'}/6${solved ? ' · solved' : ` · ${round.guesses.length} guesses`}\n${round.guesses.map((guess) => guess.marks.map((mark) => symbols[mark] || '-').join('')).join('\n')}\nG = right spot · Y = elsewhere · - = absent`;
+  const text = `wordlle with Ishita\n${label} · ${difficultyLabel(difficulty)} · round ${round.round} · ${wordLength} letters\n${solved ? round.guesses.length : 'X'}/6${solved ? ' · solved' : ` · ${round.guesses.length} guesses`}\n${round.guesses.map((guess) => guess.marks.map((mark) => symbols[mark] || '-').join('')).join('\n')}\nG = right spot · Y = elsewhere · - = absent`;
   $('result-share-text').value = text;
   $('result-share-status').textContent = 'Copy this spoiler-free grid to share with your people.';
   $('native-share').hidden = typeof navigator.share !== 'function';
@@ -805,7 +811,7 @@ $('library-refresh').addEventListener('click', () => void loadLibrary());
 $('library-retry').addEventListener('click', () => void loadLibrary());
 $('review-game').addEventListener('click', () => { if (room?.status === 'finished') void openGame(room.gameId); });
 $('share-result').addEventListener('click', () => {
-  if (room?.status === 'round-over' || room?.status === 'finished') void shareResult({ round: room.round, guesses: room.guesses }, room.wordLength, `Team game · ${room.totalRounds} rounds`);
+  if (room?.status === 'round-over' || room?.status === 'finished') void shareResult({ round: room.round, guesses: room.guesses }, room.wordLength, `Team game · ${room.totalRounds} rounds`, room.difficulty);
 });
 $('copy-result').addEventListener('click', async () => {
   try {
@@ -870,7 +876,12 @@ for (const dialog of dialogs) {
 window.addEventListener('popstate', () => void restoreRoom());
 window.addEventListener('online', () => { void returnVisible(); });
 window.addEventListener('pagehide', markAway);
-window.addEventListener('pageshow', (event) => { if (event.persisted) void returnVisible(); });
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    if (!$('home-view').hidden) $('activity-history').open = false;
+    void returnVisible();
+  }
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { markAway(); renderControls(); }
   else void returnVisible();

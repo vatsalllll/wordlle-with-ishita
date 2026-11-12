@@ -5,6 +5,7 @@ export function createBloomLoader({ onClose = () => {} } = {}) {
   const status = document.getElementById('bloom-status');
   const errorMessage = document.getElementById('bloom-error');
   const skipButton = document.getElementById('bloom-skip');
+  const skipLabel = skipButton.querySelector('span');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const phases = {
     seed: 'Gathering a little stardust…',
@@ -100,7 +101,7 @@ export function createBloomLoader({ onClose = () => {} } = {}) {
     requestTimer = null;
     root.dataset.phase = 'seed';
     errorMessage.hidden = !sceneFailed;
-    skipButton.textContent = 'Skip intro ↗';
+    skipLabel.textContent = 'Skip intro';
     status.textContent = phases.seed;
     open('intro');
     const skippedPromise = new Promise((resolve) => {
@@ -126,12 +127,12 @@ export function createBloomLoader({ onClose = () => {} } = {}) {
       await waitForNetwork();
       if (!skipped && (sceneFailed || startupFailed)) {
         status.textContent = 'The game is available without the animation.';
-        skipButton.textContent = 'Continue to game ↗';
+        skipLabel.textContent = 'Continue to game';
         await skippedPromise;
       } else if (!skipped) {
         root.dataset.state = 'welcome';
         status.textContent = 'Your little word garden is ready.';
-        skipButton.textContent = 'Let’s play ↗';
+        skipLabel.textContent = 'Let’s play';
         await Promise.race([wait(reducedMotion ? 500 : 1900), skippedPromise]);
       }
       // A new navigation can add work while the exit is in flight; never hide it early.

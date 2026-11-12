@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -15,7 +15,7 @@ async function game(t, { persistent = false, seed, ...options } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'wordbloom-test-'));
   const settings = {
     dbPath: persistent ? join(directory, 'game.sqlite') : ':memory:',
-    answers: ['APPLE'], allowedWords, guessCooldownMs: 0,
+    answers: ['APPLE'], easyAnswers: [], hardAnswers: [], allowedWords, guessCooldownMs: 0,
     now: () => 1_800_000_000_000, ...options,
   };
   if (seed) await seed(settings.dbPath);
@@ -95,7 +95,7 @@ async function completeGame(host, guest, path) {
   return state;
 }
 
-// Every word is injected: these tests never depend on the production dictionary or randomness.
+// Behavioral fixtures inject their words; tier coverage below also exercises the private bundled dictionaries.
 test('duplicate letters consume only unmatched answer letters', () => {
   const cases = [
     ['APPLE', 'APPLE', ['correct', 'correct', 'correct', 'correct', 'correct']],
@@ -334,6 +334,7 @@ test('cross-origin mutations and static private-file access are denied', async t
   assert.equal(ok(await host.get(path)).status, 'lobby');
   for (const privatePath of [
     '/server.mjs', '/package.json', '/data/answers.txt', '/data/allowed.txt',
+    '/data/easy-answers.txt', '/data/hard-answers.txt', '/easy-answers.txt', '/hard-answers.txt',
     '/data/wordbloom.sqlite', '/game.sqlite', '/test/game.test.mjs',
     '/%2e%2e/server.mjs', '/public/../server.mjs',
   ]) denied(await host.get(privatePath), [404]);
@@ -739,10 +740,11 @@ test('legacy SQLite migrates identities, memberships, scores and recorded boards
   const legacyPlayer = { id: 'legacy-player', sessionId, name: 'Legacy', score: 1,
     guesses: [{ word: 'CRANE', marks: scoreGuess('CRANE', 'APPLE') }], status: 'playing', lastGuessAt: now - 1000 };
   const baseRoom = { code: 'ABCDEF', status: 'playing', round: 2, totalRounds: 3, deadline: now + 120_000,
-    answer: 'APPLE', usedAnswers: ['APPLE', 'APPLE'], history: [{ round: 1, answer: 'APPLE', solvers: ['Legacy'] }],
+    answer: 'APPLE', usedAnswers: ['CRANE', 'APPLE'], history: [{ round: 1, answer: 'CRANE', solvers: ['Legacy'] }],
     hostId: legacyPlayer.id, players: [legacyPlayer], updated: now - 9 * 86_400_000 };
   const server = await game(t, {
     persistent: true, now: () => now,
+    answers: ['APPLE', 'CRANE', 'FJORD'], hardAnswers: ['APPLE', 'FJORD'],
     seed(dbPath) {
       const db = new DatabaseSync(dbPath);
       db.exec(`CREATE TABLE rooms (code TEXT PRIMARY KEY, data TEXT NOT NULL, updated INTEGER NOT NULL);
@@ -760,6 +762,7 @@ test('legacy SQLite migrates identities, memberships, scores and recorded boards
   const host = server.client(`wb_session=${token}`);
   const migrated = ok(await host.get(roomPath(baseRoom.code)));
   assert.equal(migrated.status, 'paused');
+  assert.equal(migrated.difficulty, null);
   assert.equal(migrated.remainingMs, 120_000);
   assert.equal(migrated.selfId, legacyPlayer.id);
   assert.notEqual(migrated.selfProfileId, migrated.selfId);
@@ -773,15 +776,39 @@ test('legacy SQLite migrates identities, memberships, scores and recorded boards
   assert.equal(library.rooms.length, 2);
   assert.equal(library.games.length, 1);
   assert.equal(library.me.points, 1);
+  assert.ok(library.rooms.every(room => room.difficulty === null));
+  assert.equal(library.games[0].difficulty, null);
   const detail = ok(await host.get(`/api/games/${library.games[0].id}`));
   assert.equal(detail.rounds[0].finishedAt, null);
   assert.equal(detail.rounds[0].players[0].guessCount, null);
   assert.deepEqual(detail.rounds[0].guesses, []);
   assert.equal(detail.rounds[2].players[0].guessCount, 6);
   assert.equal(detail.rounds[2].guesses.length, 6);
+  assert.equal(detail.difficulty, null);
+  assert.ok(detail.rounds.every(round => round.difficulty === null));
+  assert.ok(ok(await host.get(`/api/players/${migrated.selfProfileId}`)).rounds.every(round => round.difficulty === null));
   await server.restart();
   assert.equal(ok(await host.get(roomPath(baseRoom.code))).gameId, migrated.gameId);
   assert.equal(ok(await host.get('/api/library')).games.length, 1);
+  const restored = ok(await host.get(roomPath(baseRoom.code)));
+  assert.equal(restored.difficulty, null);
+  assert.deepEqual(restored.guesses, legacyPlayer.guesses);
+  ok(await host.post(`${roomPath(baseRoom.code)}/resume`));
+  const solved = ok(await host.post(`${roomPath(baseRoom.code)}/guess`, { word: 'APPLE', round: 2 }));
+  assert.equal(solved.answer, 'APPLE');
+  assert.equal(me(solved).score, 2);
+  assert.equal(solved.difficulty, null);
+  ok(await host.post(`${roomPath(baseRoom.code)}/next`, { round: 2, difficulty: 'medium' }));
+  const finished = ok(await host.post(`${roomPath(baseRoom.code)}/guess`, { word: 'FJORD', round: 3 }));
+  assert.equal(finished.status, 'finished');
+  assert.equal(finished.difficulty, null);
+  assert.equal(me(finished).score, 3);
+  assert.equal(ok(await host.get(`/api/games/${finished.gameId}`)).difficulty, null);
+  const rematch = ok(await host.post(`${roomPath(baseRoom.code)}/rematch`, { difficulty: 'hard' }));
+  assert.equal(rematch.difficulty, 'medium');
+  assert.equal(rematch.selfId, migrated.selfId);
+  ok(await host.post(`${roomPath(baseRoom.code)}/start`));
+  assert.equal(ok(await host.post(`${roomPath(baseRoom.code)}/guess`, { word: 'CRANE', round: 1 })).answer, 'CRANE');
 });
 
 test('one-year sliding identity and room retention do not expire durable archives with old live rooms', async t => {
@@ -801,4 +828,253 @@ test('one-year sliding identity and room retention do not expire durable archive
   assert.equal(library.games.length, 1);
   assert.equal(library.me.points, 3);
   assert.equal(ok(await host.get(`/api/games/${ended.gameId}`)).rounds.length, 3);
+});
+
+const [bundledAnswers, extraAnswers, easyAnswers, hardAnswers] = await Promise.all(
+  ['answers.txt', 'extra-answers.txt', 'easy-answers.txt', 'hard-answers.txt'].map(async file =>
+    (await readFile(new URL(`../data/${file}`, import.meta.url), 'utf8')).trim().toUpperCase().split(/\s+/)),
+);
+const productionAnswers = new Set([...bundledAnswers, ...extraAnswers]);
+const classifiedAnswers = new Set([...easyAnswers, ...hardAnswers]);
+const difficultyPools = {
+  easy: easyAnswers,
+  medium: [...productionAnswers].filter(word => !classifiedAnswers.has(word)),
+  hard: hardAnswers,
+};
+
+test('private curated pools are unique disjoint answer subsets with ten-round capacity at every length', () => {
+  for (const words of [easyAnswers, hardAnswers]) {
+    assert.equal(new Set(words).size, words.length);
+    assert.ok(words.every(word => /^[A-Z]{4,7}$/.test(word) && productionAnswers.has(word)));
+  }
+  assert.ok(easyAnswers.every(word => !hardAnswers.includes(word)));
+  for (const [difficulty, words] of Object.entries(difficultyPools)) {
+    for (const wordLength of [4, 5, 6, 7]) {
+      assert.ok(words.filter(word => word.length === wordLength).length >= (difficulty === 'medium' ? 10 : 20),
+        `${difficulty}, ${wordLength} letters needs enough distinct answers`);
+    }
+  }
+  assert.deepEqual(new Set(Object.values(difficultyPools).flat()), productionAnswers);
+});
+
+for (const difficulty of ['easy', 'medium', 'hard']) {
+  for (const wordLength of [4, 5, 6, 7]) {
+    test(`${difficulty} ${wordLength}-letter production pool stays private and supplies ten distinct rounds`, async t => {
+      let now = 1_800_000_000_000;
+      const server = await game(t, {
+        answers: [...productionAnswers], easyAnswers, hardAnswers, allowedWords: productionAnswers,
+        roundMs: 1000, now: () => now,
+      });
+      const host = server.client();
+      const lobby = ok(await host.post('/api/rooms', { name: 'Host', totalRounds: 10, wordLength, difficulty }));
+      const path = roomPath(lobby.code);
+      assert.equal(lobby.difficulty, difficulty);
+      const chosen = new Set();
+      let playing = ok(await host.post(`${path}/start`, { difficulty: 'another-level' }));
+      for (let round = 1; round <= 10; round++) {
+        assert.equal(playing.difficulty, difficulty);
+        assert.equal(playing.wordLength, wordLength);
+        assert.equal(playing.answer, null);
+        assert.deepEqual(playing.guesses, []);
+        assert.equal(playing.deadline, now + 1000);
+        for (const key of ['answers', 'easyAnswers', 'hardAnswers', 'answerPools', 'usedAnswers', 'sessionId']) {
+          assert.ok(!Object.hasOwn(playing, key));
+        }
+        now = playing.deadline;
+        const ended = ok(await host.get(path));
+        assert.equal(ended.round, round);
+        assert.equal(ended.answer.length, wordLength);
+        assert.ok(difficultyPools[difficulty].includes(ended.answer));
+        assert.ok(!chosen.has(ended.answer), 'normal ten-round matches must not repeat an answer');
+        chosen.add(ended.answer);
+        assert.equal(me(ended).score, 0);
+        assert.equal(ended.history.at(-1).difficulty, difficulty);
+        if (round < 10) playing = ok(await host.post(`${path}/next`, { round, difficulty: 'another-level' }));
+        else assert.equal(ended.status, 'finished');
+      }
+      assert.equal(chosen.size, 10);
+      assert.equal(ok(await host.get('/api/library')).games[0].difficulty, difficulty);
+    });
+  }
+}
+
+test('new rooms default to Medium and reject invalid levels or unavailable tier-length tuples', async t => {
+  const server = await game(t);
+  const host = server.client();
+  assert.equal((await create(host)).difficulty, 'medium');
+  for (const difficulty of ['Easy', 'expert', '', null, 0, {}, [], true]) {
+    denied(await host.post('/api/rooms', { name: 'Host', difficulty }), [400]);
+  }
+  for (const options of [{ difficulty: 'easy' }, { difficulty: 'hard' }, { wordLength: 4 }]) {
+    denied(await host.post('/api/rooms', { name: 'Host', ...options }), [400]);
+  }
+});
+
+test('invalid injected classification cannot silently relabel answers', () => {
+  for (const classification of [
+    { easyAnswers: ['APPLE', 'APPLE'], hardAnswers: [] },
+    { easyAnswers: ['APPLE'], hardAnswers: ['APPLE'] },
+    { easyAnswers: [], hardAnswers: ['FJORD'] },
+  ]) {
+    assert.throws(() => createGameServer({ dbPath: ':memory:', answers: ['APPLE'], ...classification }),
+      /Invalid difficulty dictionaries/);
+  }
+});
+
+const singleAnswerTiers = { easy: 'APPLE', medium: 'CRANE', hard: 'FJORD' };
+for (const [difficulty, answer] of Object.entries(singleAnswerTiers)) {
+  test(`${difficulty} survives team play, restart, exhaustion, archives and rematch without crossing tiers`, async t => {
+    const words = Object.values(singleAnswerTiers);
+    const server = await game(t, {
+      persistent: true, answers: words, easyAnswers: ['APPLE'], hardAnswers: ['FJORD'], allowedWords: new Set(words),
+    });
+    const host = server.client();
+    const guest = server.client();
+    const lobby = ok(await host.post('/api/rooms', { name: 'Host', totalRounds: 3, difficulty }));
+    const path = roomPath(lobby.code);
+    const joined = ok(await guest.post(`${path}/join`, { name: 'Guest', difficulty: 'invalid' }));
+    assert.equal(joined.difficulty, difficulty);
+    const team = joined.players.map(player => player.id);
+    const playing = ok(await host.post(`${path}/start`));
+    assert.equal(playing.deadline - playing.serverTime, 180_000);
+    const wrong = words.find(word => word !== answer);
+    const hostSolved = ok(await host.post(`${path}/guess`, { word: answer, round: 1, difficulty: 'invalid' }));
+    const guestGuessed = ok(await guest.post(`${path}/guess`, { word: wrong, round: 1, difficulty: 'invalid' }));
+    assert.equal(guestGuessed.answer, null);
+    assert.ok(!JSON.stringify(guestGuessed).includes(`"word":"${answer}"`));
+    assert.equal(me(hostSolved).score, 1);
+    await server.restart();
+    const restoredHost = ok(await host.get(path));
+    const restoredGuest = ok(await guest.get(path));
+    assert.equal(restoredHost.difficulty, difficulty);
+    assert.equal(restoredHost.status, 'paused');
+    assert.deepEqual(restoredHost.players.map(player => player.id), team);
+    assert.deepEqual(restoredHost.guesses, hostSolved.guesses);
+    assert.deepEqual(restoredGuest.guesses, guestGuessed.guesses);
+    assert.equal(me(restoredHost).score, 1);
+    assert.equal(restoredGuest.answer, null);
+    assert.ok(!JSON.stringify(restoredGuest).includes(`"word":"${answer}"`));
+    ok(await host.post(`${path}/resume`));
+    let ended = ok(await guest.post(`${path}/guess`, { word: answer, round: 1 }));
+    for (let round = 2; round <= 3; round++) {
+      const next = ok(await host.post(`${path}/next`, { round: round - 1, difficulty: 'invalid' }));
+      assert.equal(next.difficulty, difficulty);
+      assert.equal(next.answer, null);
+      ok(await host.post(`${path}/guess`, { word: answer, round, difficulty: 'invalid' }));
+      ended = ok(await guest.post(`${path}/guess`, { word: answer, round }));
+      assert.equal(ended.answer, answer, 'exhaustion repeats only within the selected tier');
+    }
+    assert.equal(ended.status, 'finished');
+    assert.ok(ended.players.every(player => player.score === 3));
+    assert.ok(ended.history.every(round => round.difficulty === difficulty && round.answer === answer));
+    const library = ok(await host.get('/api/library'));
+    assert.equal(library.rooms[0].difficulty, difficulty);
+    assert.equal(library.games[0].difficulty, difficulty);
+    for (const word of words) assert.ok(!JSON.stringify(library).includes(`"${word}"`));
+    const detail = ok(await host.get(`/api/games/${playing.gameId}`));
+    assert.equal(detail.difficulty, difficulty);
+    assert.ok(detail.rounds.every(round => round.difficulty === difficulty));
+    const own = ok(await host.get(`/api/players/${playing.selfProfileId}`));
+    assert.ok(own.games.every(game => game.difficulty === difficulty));
+    assert.ok(own.rounds.every(round => round.difficulty === difficulty && round.guesses.length === 1));
+    const teammate = joined.players.find(player => player.id !== playing.selfId);
+    const other = ok(await host.get(`/api/players/${teammate.profileId}`));
+    assert.ok(other.rounds.every(round => round.difficulty === difficulty && round.guesses.length === 0));
+    const rematch = ok(await host.post(`${path}/rematch`, { difficulty: 'invalid' }));
+    assert.equal(rematch.difficulty, difficulty);
+    assert.deepEqual(rematch.players.map(player => player.id), team);
+    assert.ok(rematch.players.every(player => player.score === 0));
+    await server.restart();
+    assert.deepEqual(ok(await host.get(`/api/games/${playing.gameId}`)), detail);
+    assert.equal(ok(await host.get(path)).difficulty, difficulty);
+    ok(await host.post(`${path}/start`));
+    ok(await host.post(`${path}/guess`, { word: answer, round: 1 }));
+    assert.equal(ok(await guest.post(`${path}/guess`, { word: answer, round: 1 })).answer, answer);
+  });
+}
+
+test('pre-level archives stay null, waiting lobbies default Medium and schema-one active games retain their boards', async t => {
+  const now = 1_800_000_000_000;
+  const token = 'l'.repeat(43), sessionId = 'old-session';
+  const id = createHash('sha256').update(`wordbloom-profile:${sessionId}`).digest('hex').slice(0, 32);
+  const gameId = '12345678-1234-1234-1234-123456789abc';
+  const oldGame = {
+    id: gameId, roomCode: 'ABCDEF', wordLength: 5, totalRounds: 3, finishedAt: now - 1000,
+    players: [{ id, sessionId, name: 'Old friend', score: 1 }],
+    rounds: [{ round: 1, answer: 'APPLE', finishedAt: now - 1000, solvers: ['Old friend'],
+      players: [{ id, name: 'Old friend', status: 'solved', guessCount: 1,
+        guesses: [{ word: 'APPLE', marks: Array(5).fill('correct') }] }] }],
+  };
+  const oldLobby = {
+    code: 'NPQRST', status: 'lobby', round: 0, totalRounds: 3, answer: null, deadline: null,
+    usedAnswers: [], history: [], hostId: 'old-player', updated: now,
+    players: [{ id: 'old-player', sessionId, name: 'Old friend', score: 0, guesses: [], status: 'waiting', lastGuessAt: null }],
+  };
+  const oldActive = {
+    ...oldLobby, code: 'UVWXYZ', schemaVersion: 1, wordLength: 5, status: 'playing', round: 2,
+    answer: 'APPLE', usedAnswers: ['CRANE', 'APPLE'], deadline: now + 110_000, remainingMs: 110_000,
+    history: [{ ...oldGame.rounds[0], answer: 'CRANE' }],
+    players: [{ ...oldLobby.players[0], score: 1, status: 'playing', lastSeenAt: now, awayAt: null,
+      guesses: [{ word: 'CRANE', marks: scoreGuess('CRANE', 'APPLE') }] }],
+  };
+  const server = await game(t, {
+    persistent: true, now: () => now,
+    answers: ['APPLE', 'CRANE', 'FJORD'], hardAnswers: ['APPLE', 'FJORD'],
+    seed(dbPath) {
+      const db = new DatabaseSync(dbPath);
+      db.exec(`CREATE TABLE rooms (code TEXT PRIMARY KEY, data TEXT NOT NULL, updated INTEGER NOT NULL);
+        CREATE TABLE sessions (hash TEXT PRIMARY KEY, id TEXT NOT NULL, expires INTEGER NOT NULL);
+        CREATE TABLE games (id TEXT PRIMARY KEY, data TEXT NOT NULL, finished INTEGER NOT NULL);
+        CREATE TABLE game_members (game_id TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(game_id, session_id));
+        PRAGMA user_version=1;`);
+      db.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run(createHash('sha256').update(token).digest('hex'), sessionId, now + 1000);
+      db.prepare('INSERT INTO rooms VALUES (?, ?, ?)').run(oldLobby.code, JSON.stringify(oldLobby), now);
+      db.prepare('INSERT INTO rooms VALUES (?, ?, ?)').run(oldActive.code, JSON.stringify(oldActive), now);
+      db.prepare('INSERT INTO games VALUES (?, ?, ?)').run(gameId, JSON.stringify(oldGame), now - 1000);
+      db.prepare('INSERT INTO game_members VALUES (?, ?)').run(gameId, sessionId);
+      db.close();
+    },
+  });
+  const host = server.client(`wb_session=${token}`);
+  for (let restart = 0; restart < 2; restart++) {
+    const library = ok(await host.get('/api/library'));
+    assert.equal(library.rooms[0].difficulty, 'medium');
+    assert.equal(library.rooms.find(room => room.code === oldActive.code).difficulty, null);
+    assert.equal(library.games[0].difficulty, null);
+    const detail = ok(await host.get(`/api/games/${gameId}`));
+    assert.equal(detail.difficulty, null);
+    assert.equal(detail.rounds[0].difficulty, null);
+    assert.equal(detail.rounds[0].answer, 'APPLE');
+    const player = ok(await host.get(`/api/players/${id}`));
+    assert.equal(player.games[0].difficulty, null);
+    assert.equal(player.rounds[0].difficulty, null);
+    assert.equal(player.player.points, 1);
+    if (!restart) await server.restart();
+  }
+  const activePath = roomPath(oldActive.code);
+  const active = ok(await host.get(activePath));
+  assert.equal(active.status, 'paused');
+  assert.equal(active.difficulty, null);
+  assert.equal(active.remainingMs, 110_000);
+  assert.equal(active.answer, null);
+  assert.equal(active.selfId, oldActive.hostId);
+  assert.equal(me(active).score, 1);
+  assert.deepEqual(active.guesses, oldActive.players[0].guesses);
+  ok(await host.post(`${activePath}/resume`));
+  const activeSolved = ok(await host.post(`${activePath}/guess`, { word: 'APPLE', round: 2 }));
+  assert.equal(activeSolved.answer, 'APPLE');
+  assert.equal(activeSolved.difficulty, null);
+  assert.equal(me(activeSolved).score, 2);
+  ok(await host.post(`${activePath}/next`, { round: 2, difficulty: 'medium' }));
+  const activeFinished = ok(await host.post(`${activePath}/guess`, { word: 'FJORD', round: 3 }));
+  assert.equal(activeFinished.status, 'finished');
+  assert.equal(activeFinished.answer, 'FJORD');
+  assert.equal(activeFinished.difficulty, null);
+  assert.equal(ok(await host.post(`${activePath}/rematch`)).difficulty, 'medium');
+  const lobby = ok(await host.get(roomPath(oldLobby.code)));
+  assert.equal(lobby.difficulty, 'medium');
+  ok(await host.post(`${roomPath(oldLobby.code)}/start`));
+  const solved = ok(await host.post(`${roomPath(oldLobby.code)}/guess`, { word: 'CRANE', round: 1 }));
+  assert.equal(solved.difficulty, 'medium');
+  assert.equal(solved.answer, 'CRANE');
 });

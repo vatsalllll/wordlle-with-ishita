@@ -47,5 +47,9 @@ dialog{border:1px solid #819272;border-radius:3px;box-shadow:8px 9px 0 #233e3260
 @media(max-width:360px){.wrap{padding-inline:15px}.hero .button{padding-inline:17px}.hero h1{font-size:44px}.hero-art{transform:scale(.84);margin-bottom:-55px}.key{font-size:11px}.keyboard-row{gap:3px}.room-heading h1{font-size:26px}.player-list{grid-template-columns:1fr}.room-sidebar{grid-template-columns:1fr}.history-panel{padding-top:15px;border-top:1px solid var(--line)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.button:hover:not(:disabled){transform:none}}
 
-.length-fieldset{margin-top:20px}
+.length-fieldset,.difficulty-fieldset{margin-top:20px}
+#host-dialog{overflow-y:auto}
+.difficulty-options label{min-width:0}
+.difficulty-options span{display:flex;flex-direction:column;justify-content:center;min-height:92px;padding:12px 5px;font-size:18px}
+.difficulty-options small{font-size:9px;line-height:1.5;color:#647157}
 .player-status,.panel-description,.keyboard-note,.small-note,.dialog-description,.color-guide>div,.hero-footnote,.how-step p,.site-footer,.example-label{color:#707b68}

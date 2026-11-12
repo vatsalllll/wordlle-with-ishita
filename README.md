@@ -11,13 +11,15 @@ npm ci
 npm start
 ```
 
-Open **http://localhost:4318**. Choose **Start a room**, enter a name, select **4–7 letters** and **3, 5, or 10 rounds**, then share the invite link or six-character room code. Invite friends before starting; up to eight people can play. Solo rooms work too.
+Open **http://localhost:4318**. Choose **Start a New Game**, enter a name, select **4–7 letters**, **3, 5, or 10 rounds**, and **Easy, Medium, or Hard**, then share the invite link or six-character room code. **Medium is preselected.** Invite friends before starting; up to eight people can play. Solo rooms work too.
 
 ```sh
 npm test
 ```
 
-The 26 isolated Node tests cover rules, permissions, all four lengths, private boards and archives, score replay/concurrency, deadlines, pause/resume, host handoff, restart preservation, legacy migration, one-year retention, zero-point final-round losses, and buffered-stream presence. Real-browser checks exercised two independent touch sessions, simultaneous guesses, private feedback, shared scoring, host departure, root-link discovery, same-team resume with saved attempts/time, third-round answer visibility, match/player histories, rematches, clipboard copying, and persisted high-contrast colors. Layout checks cover 360/390px portrait and 844px landscape. Earlier loader checks cover the real Three.js scene, fullscreen pending requests, replay, touch Skip, and reduced motion.
+The 45 isolated Node tests cover rules, permissions, private boards/archives, persistence, proxy-safe presence, migration, all twelve length/difficulty combinations, ten-round uniqueness, and same-tier exhaustion. Real-browser checks cover shared Hard games, all three level choices, level-aware history/sharing, and older saved games surviving the update.
+
+Desktop and 360/390px portrait plus 844px landscape checks exercise the play-first home, collapsed history, centered keyboard/touch Skip, and preserved focus. Clearing only localStorage retained the same cookie-linked player and history. Earlier checks cover the Three.js scene, pending-work overlay, reduced motion, shared scoring, private guesses, same-team resume, and rematches.
 
 ## Rules
 
@@ -27,7 +29,29 @@ Each person who solves earns **one point**, regardless of speed or attempt count
 
 The classic five-letter rules follow the [New York Times Wordle help](https://help.nytimes.com/24611727334932-Wordle). Multiplayer, selectable lengths, scoring, and timed rounds are wordlle with Ishita variants; this is not an official NYT product.
 
+## Word difficulty
+
+The host picks one level for the whole room beside word size and round count:
+
+- **Easy:** hand-picked familiar, everyday vocabulary.
+- **Medium (default):** the standard mixed pool, excluding the curated Easy and Hard sets.
+- **Hard:** hand-picked trickier spelling, unusual letter combinations, silent letters or repeated letters.
+
+These are curated word pools, not formal reading grades. Hard changes the answer selection, **not** the NYT rule requiring reuse of revealed hints. Every level still gives six guesses, three minutes and one point per solve. All valid dictionary guesses remain allowed.
+
+| Letters | Easy | Medium | Hard |
+| --- | ---: | ---: | ---: |
+| 4 | 30 | 417 | 30 |
+| 5 | 30 | 2,249 | 30 |
+| 6 | 30 | 273 | 30 |
+| 7 | 30 | 254 | 30 |
+
+Answers do not repeat within a normal ten-round match; different matches may repeat words. Rematches retain the selected level. Existing games started before levels keep their original word pool and are labelled **Classic**; their next rematch defaults to Medium. Older archives are not retroactively assigned a level.
+
+
 ## Saved teams, history and sharing
+
+Home always leads with **Start a New Game**. Saved-team Continue actions are secondary; **History & stats** is collapsed on reopening and contains game history, the leaderboard and player histories.
 
 Visible game tabs refresh presence with authenticated HTTP every 2.5 seconds. SSE delivers fast updates but does not prove a player is still present: proxies may retain a stream after the page closes. Delayed stream closure never moves the recorded departure time.
 
@@ -56,7 +80,7 @@ Three.js **0.181.0** is pinned in `package-lock.json` and served locally from `p
 
 - Answers, randomness (`crypto.randomInt`), dictionary checks, attempts, deadlines, and scores live on the server. No answer-selection or score-setting endpoint exists.
 - Opponents receive progress and scores, never one another's guess words or tile marks. Running out of attempts does not reveal a word before other players finish.
-- Membership uses random HTTP-only, same-site cookies. Tokens are stored hashed. Reloading or opening another tab retains the same attempts; new identities cannot join a started match.
+- Membership uses a random HTTP-only, same-site `wb_session` cookie, stored hashed on the server. SQLite holds the games, guesses, scores and history. localStorage holds only the display name, last-room hint and contrast preference—not identity or game records. Reloading or clearing only localStorage retains membership; new identities cannot join a started match.
 - Only the current host can start, advance a completed round, or request a rematch; existing members may resume a paused round. An active member can inherit an absent host's role after the presence grace. All mutations are checked again after their request body arrives. Stale-round guesses cannot spend attempts in a new round.
 - Mutations are same-origin, input/body sizes are bounded, guesses are throttled, and private dictionaries, server source, and SQLite files cannot be fetched as web assets.
 - SQLite preserves team state and completed-game archives across restarts. Sessions renew for one year during use; live rooms expire after one year without a saved update. Archives survive live-room cleanup. Keep the same public hostname and browser cookies: another device, expired identity, or cleared cookies cannot recover your player without an account system.
@@ -93,5 +117,6 @@ Words are bundled privately and do not need network access during a game:
 - `data/answers.txt`: 2,309 five-letter answers from [Alex Selby's archived NYT word list](https://github.com/alex1770/wordle), MIT license in `data/LICENSE`. `data/guesses.txt` contains that project's 14,855 accepted five-letter guesses.
 - `data/extra-answers.txt`: curated common-word pools for other lengths: 477 four-letter, 333 six-letter, and 314 seven-letter answers. Answers do not repeat within a normal match.
 - `data/english.txt`: 73,581 accepted four-to-seven-letter words filtered from [Sindre Sorhus's word-list](https://github.com/sindresorhus/word-list); MIT license in `data/WORD-LIST-LICENSE`.
+- `data/easy-answers.txt` and `data/hard-answers.txt`: disjoint curated subsets of the bundled answers, kept private. Medium uses the remaining answers; no online word API is required.
 
 Google Fonts supplies optional display fonts; system fallbacks remain usable when offline. All gameplay, assets other than these fonts, and word data are served by this app.

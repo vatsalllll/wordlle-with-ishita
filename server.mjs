@@ -86,13 +86,26 @@ function playerName(value) {
 export function createGameServer({
   dbPath = process.env.DB_PATH || join(ROOT, '.data', 'wordbloom.sqlite'),
   answers = [...wordsFrom('answers.txt'), ...wordsFrom('extra-answers.txt')],
+  easyAnswers = wordsFrom('easy-answers.txt'),
+  hardAnswers = wordsFrom('hard-answers.txt'),
   allowedWords = new Set([...wordsFrom('guesses.txt'), ...wordsFrom('english.txt'), ...answers]),
   roundMs = 180_000,
   guessCooldownMs = 500,
   now = Date.now,
 } = {}) {
   requireThat(answers.length > 0 && answers.every((word) => /^[A-Z]{4,7}$/.test(word)), 500, 'Invalid answer dictionary.');
-  const answerPools = new Map([4, 5, 6, 7].map((length) => [length, answers.filter((word) => word.length === length)]));
+  const allAnswers = new Set(answers);
+  const easy = new Set(easyAnswers), hard = new Set(hardAnswers);
+  requireThat(easy.size === easyAnswers.length && hard.size === hardAnswers.length &&
+    [...easy, ...hard].every((word) => allAnswers.has(word)) &&
+    [...easy].every((word) => !hard.has(word)), 500, 'Invalid difficulty dictionaries.');
+  const byLength = (words) => new Map([4, 5, 6, 7].map((length) => [length, [...words].filter((word) => word.length === length)]));
+  // ponytail: small curated Easy/Hard pools can repeat across matches; expand their private lists as needed.
+  const answerPools = new Map([
+    ['easy', byLength(easy)], ['hard', byLength(hard)],
+    ['medium', byLength([...allAnswers].filter((word) => !easy.has(word) && !hard.has(word)))],
+    [null, byLength(allAnswers)],
+  ]);
   if (dbPath !== ':memory:') mkdirSync(dirname(resolve(dbPath)), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;
@@ -176,7 +189,7 @@ export function createGameServer({
 
   function publicRound(entry, sessionId) {
     return {
-      round: entry.round, answer: entry.answer, finishedAt: entry.finishedAt,
+      round: entry.round, answer: entry.answer, difficulty: entry.difficulty ?? null, finishedAt: entry.finishedAt,
       solvers: entry.solvers,
       players: entry.players.map(({ id, name, status, guessCount }) => ({ id, name, status, guessCount })),
       guesses: entry.players.find((p) => p.id === profileId(sessionId))?.guesses || [],
@@ -187,7 +200,7 @@ export function createGameServer({
     const me = member(room, sessionId);
     return {
       code: room.code, gameId: room.gameId, status: room.status, round: room.round,
-      totalRounds: room.totalRounds, wordLength: room.wordLength,
+      totalRounds: room.totalRounds, wordLength: room.wordLength, difficulty: room.difficulty,
       deadline: room.deadline, serverTime: now(), hostId: room.hostId, selfId: me.id,
       selfProfileId: profileId(sessionId), maxPlayers: 8,
       remainingMs: room.status === 'paused' ? room.remainingMs : null, pausedAt: room.pausedAt,
@@ -202,7 +215,7 @@ export function createGameServer({
     const best = Math.max(0, ...players.map((p) => p.score));
     return {
       id: game.id, roomCode: game.roomCode, wordLength: game.wordLength, totalRounds: game.totalRounds,
-      finishedAt: game.finishedAt, players,
+      difficulty: game.difficulty ?? null, finishedAt: game.finishedAt, players,
       winners: best > 0 ? players.filter((p) => p.score === best).map((p) => p.id) : [],
     };
   }
@@ -211,7 +224,7 @@ export function createGameServer({
     if (room.status !== 'finished') return;
     const game = {
       id: room.gameId, roomCode: room.code, wordLength: room.wordLength, totalRounds: room.totalRounds,
-      finishedAt: room.finishedAt, rounds: room.history,
+      difficulty: room.difficulty, finishedAt: room.finishedAt, rounds: room.history,
       players: room.players.map((p) => ({ id: profileId(p.sessionId), sessionId: p.sessionId, name: p.name, score: p.score })),
     };
     writeGame.run(game.id, JSON.stringify(game), game.finishedAt);
@@ -242,7 +255,7 @@ export function createGameServer({
 
   function recordRound(room, finishedAt) {
     return {
-      round: room.round, answer: room.answer, finishedAt,
+      round: room.round, answer: room.answer, difficulty: room.difficulty, finishedAt,
       solvers: room.players.filter((p) => p.status === 'solved').map((p) => p.name),
       players: room.players.map((p) => ({
         id: profileId(p.sessionId), name: p.name, status: p.status, guessCount: p.guesses.length,
@@ -300,7 +313,7 @@ export function createGameServer({
   }
 
   function beginRound(room) {
-    const candidates = answerPools.get(room.wordLength);
+    const candidates = answerPools.get(room.difficulty).get(room.wordLength);
     const unused = candidates.filter((word) => !room.usedAnswers.includes(word));
     const pool = unused.length ? unused : candidates;
     room.answer = pool[randomInt(pool.length)];
@@ -349,7 +362,7 @@ export function createGameServer({
       me: stats.get(profileId(sessionId)) || null,
       rooms: ownRooms.map((room) => ({
         code: room.code, gameId: room.gameId, status: room.status, round: room.round,
-        totalRounds: room.totalRounds, wordLength: room.wordLength, updatedAt: room.updated,
+        totalRounds: room.totalRounds, wordLength: room.wordLength, difficulty: room.difficulty, updatedAt: room.updated,
         remainingMs: room.status === 'paused' ? room.remainingMs : null, hostId: room.hostId, players: publicPlayers(room),
       })),
       games: games.map(summary), leaderboard,
@@ -366,10 +379,12 @@ export function createGameServer({
       const legacy = !room.schemaVersion;
       room.gameId ||= randomUUID();
       room.wordLength ||= 5;
+      room.difficulty ??= room.status === 'lobby' ? 'medium' : null;
       room.pausedAt ??= null; room.remainingMs ??= null;
       room.finishedAt ??= room.status === 'finished' ? room.updated : null;
       for (const p of room.players) { p.lastSeenAt ??= room.updated; p.awayAt ??= null; }
       room.history = room.history.map((entry) => {
+        entry.difficulty ??= room.difficulty;
         if (entry.players) return entry;
         const recorded = ['round-over', 'finished'].includes(room.status) && entry.round === room.round;
         return {
@@ -453,7 +468,7 @@ export function createGameServer({
             const outcome = entry.players.find((p) => p.id === player.id);
             return outcome ? [{
               gameId: game.id, roomCode: game.roomCode, round: entry.round, wordLength: game.wordLength,
-              finishedAt: entry.finishedAt, answer: entry.answer, status: outcome.status,
+              difficulty: game.difficulty ?? null, finishedAt: entry.finishedAt, answer: entry.answer, status: outcome.status,
               guessCount: outcome.guessCount, guesses: player.id === profileId(sid) ? outcome.guesses : [],
             }] : [];
           })),
@@ -468,7 +483,9 @@ export function createGameServer({
         requireThat([3, 5, 10].includes(totalRounds), 400, 'Choose 3, 5, or 10 rounds.');
         const wordLength = data.wordLength ?? 5;
         requireThat([4, 5, 6, 7].includes(wordLength), 400, 'Choose 4, 5, 6, or 7 letters.');
-        requireThat(answerPools.get(wordLength).length > 0, 400, 'No words available for that length.');
+        const difficulty = data.difficulty === undefined ? 'medium' : data.difficulty;
+        requireThat(['easy', 'medium', 'hard'].includes(difficulty), 400, 'Choose Easy, Medium, or Hard.');
+        requireThat(answerPools.get(difficulty).get(wordLength).length > 0, 400, 'No words available for that level and length.');
         requireThat(rooms.size < 2000, 503, 'The garden is full. Please try again later.');
         const sid = session(req, res, true);
         rateLimit(`create-session:${sid}`, 10, 600_000);
@@ -476,7 +493,7 @@ export function createGameServer({
         do { code = Array.from({ length: 6 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
         const player = newPlayer(name, sid);
         const room = { code, gameId: randomUUID(), schemaVersion: 1, status: 'lobby', round: 0,
-          totalRounds, wordLength, deadline: null, remainingMs: null, pausedAt: null, finishedAt: null,
+          totalRounds, wordLength, difficulty, deadline: null, remainingMs: null, pausedAt: null, finishedAt: null,
           answer: null, usedAnswers: [], history: [], hostId: player.id, players: [player], updated: now() };
         save(room);
         rooms.set(code, room);
@@ -574,6 +591,7 @@ export function createGameServer({
       } else if (action === 'rematch') {
         requireThat(room.status === 'finished', 409, 'Finish this game before a rematch.');
         // The finished game was archived transactionally when its last round settled.
+        room.difficulty ??= 'medium';
         room.gameId = randomUUID();
         room.status = 'lobby'; room.round = 0; room.answer = null; room.deadline = null;
         room.remainingMs = null; room.pausedAt = null; room.finishedAt = null;

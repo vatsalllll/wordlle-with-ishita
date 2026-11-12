@@ -104,21 +104,26 @@
 #bloom-status::before { content: ''; display: inline-block; width: 4px; height: 4px; margin: 0 9px 2px 0; border-radius: 50%; background: var(--bloom-gold); box-shadow: 0 0 9px #dbbe7880; }
 #bloom-error { margin: 8px 0 0; color: #f1c7a6; font: 400 11px/1.6 var(--sans); }
 #bloom-skip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   flex: none;
   min-width: 105px;
   min-height: 44px;
-  padding: 10px 0 10px 14px;
+  padding: 10px 12px;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--bloom-ivory);
   font: 500 11px/1.5 var(--sans);
   letter-spacing: .4px;
-  text-align: right;
+  text-align: center;
   transition: color .2s;
 }
+#bloom-skip svg { width: 16px; height: 16px; flex: none; transform: rotate(-45deg); }
 #bloom-skip:hover { color: var(--bloom-gold); }
-#bloom-skip:focus-visible { outline: 1px solid var(--bloom-gold); outline-offset: 6px; }
+#bloom-skip:focus-visible { outline: 2px solid var(--bloom-gold); outline-offset: 3px; }
 #bloom-loader[data-mode="request"] .bloom-copy,
 #bloom-loader[data-mode="request"] #bloom-skip { display: none; }
 #bloom-loader[data-mode="request"] .bloom-loading-copy { max-width: 100%; }
