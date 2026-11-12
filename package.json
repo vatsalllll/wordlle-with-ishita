@@ -4,9 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Private, fair multiplayer word games with friends.",
-  "engines": { "node": ">=22.13.0" },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/game.test.mjs"
+    "test": "node --test test/game.test.mjs",
+    "postinstall": "node scripts/vendor.mjs"
+  },
+  "dependencies": {
+    "three": "0.181.0"
   }
 }

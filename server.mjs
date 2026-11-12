@@ -13,6 +13,12 @@ const STATIC = new Map([
   ['/index.html', ['index.html', 'text/html; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/sunflower-loader.js', ['sunflower-loader.js', 'text/javascript; charset=utf-8']],
+  ['/sunflower-scene.js', ['sunflower-scene.js', 'text/javascript; charset=utf-8']],
+  ['/sunflower-loader.css', ['sunflower-loader.css', 'text/css; charset=utf-8']],
+  ['/vendor/three-0.181.0/three.module.min.js', ['vendor/three-0.181.0/three.module.min.js', 'text/javascript; charset=utf-8']],
+  ['/vendor/three-0.181.0/three.core.min.js', ['vendor/three-0.181.0/three.core.min.js', 'text/javascript; charset=utf-8']],
+  ['/vendor/three-0.181.0/LICENSE.txt', ['vendor/three-0.181.0/LICENSE.txt', 'text/plain; charset=utf-8']],
   ['/favicon.svg', ['favicon.svg', 'image/svg+xml']],
 ]);
 
@@ -209,6 +215,7 @@ export function createGameServer({
         let content;
         try { content = readFileSync(join(ROOT, 'public', asset[0])); }
         catch { throw new HttpError(404, 'Not found.'); }
+        if (path.startsWith('/vendor/three-0.181.0/')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         res.writeHead(200, { 'Content-Type': asset[1], 'Content-Length': content.length });
         return res.end(req.method === 'HEAD' ? undefined : content);
       }

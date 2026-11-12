@@ -2,12 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f6f4eb">
   <meta name="description" content="wordlle with Ishita. Gather your favorite people in a private room, find the same mystery word, and grow your score together.">
   <title>wordlle with Ishita — good words, better company.</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <style>
+    #bloom-loader{position:fixed;inset:0;z-index:2100;width:100vw;height:100vh;height:100dvh;max-width:none;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:#061b16;color:#f8f1dc;overflow:hidden}
+    #bloom-loader::backdrop{background:#061b16}
+    #bloom-canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
+    #bloom-welcome{visibility:hidden}
+  </style>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/sunflower-loader.css">
+  <link rel="modulepreload" href="/sunflower-scene.js">
+  <link rel="modulepreload" href="/vendor/three-0.181.0/three.module.min.js">
+  <link rel="modulepreload" href="/vendor/three-0.181.0/three.core.min.js">
   <script src="/app.js" type="module"></script>
 </head>
 <body>
@@ -26,7 +36,7 @@
 
   <header class="site-header wrap">
     <a href="/" class="brand" aria-label="wordlle with Ishita home"><svg class="brand-flower" aria-hidden="true"><use href="#flower"/></svg><span class="brand-lockup">wordlle<span class="brand-period">.</span><span class="brand-byline">with Ishita</span></span></a>
-    <div class="header-right"><span class="header-note">A word game, in good company.</span><button class="text-button" id="rules-button">How to play <span aria-hidden="true">↗</span></button></div>
+    <div class="header-right"><span class="header-note">A word game, in good company.</span><button type="button" class="replay-intro" id="replay-intro" aria-label="Replay sunflower animation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1.7 7M4 4v6h6"/><path d="m12 8 1.2 2.8L16 12l-2.8 1.2L12 16l-1.2-2.8L8 12l2.8-1.2Z"/></svg><span>Watch the bloom</span></button><button class="text-button" id="rules-button">How to play <span aria-hidden="true">↗</span></button></div>
   </header>
 
   <main>
@@ -89,22 +99,22 @@
 
   <footer class="site-footer wrap"><span>wordlle <span class="footer-byline">with Ishita</span><span class="brand-period">.</span></span><p>A small game. A little connection. Something good growing.</p><span class="footer-flower" aria-hidden="true">✳</span></footer>
 
-  <dialog id="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-description">
-    <p class="welcome-kicker">A little sunshine. A little wordplay.</p>
-    <div class="welcome-art" aria-hidden="true">
-      <svg class="welcome-orbit" viewBox="0 0 180 170"><circle cx="90" cy="85" r="74"/><circle class="orbit-inner" cx="90" cy="85" r="61"/></svg>
-      <pre class="welcome-flower"><span class="welcome-crown">  \ | /  
- --<span class="welcome-heart">(@)</span>-- 
-  / | \  </span><span class="welcome-stem">    |    
-   \|/   </span></pre>
+  <dialog id="bloom-loader" open data-mode="intro" data-state="loading" data-phase="seed" aria-labelledby="bloom-title" aria-describedby="bloom-status">
+    <canvas id="bloom-canvas" aria-hidden="true"></canvas>
+    <div class="bloom-atmosphere" aria-hidden="true"></div>
+    <div class="bloom-topbar">
+      <p class="bloom-brand">wordlle<span>.</span><small>with Ishita</small></p>
+      <p class="bloom-edition">A little good, growing.</p>
     </div>
-    <h1 id="welcome-title" aria-label="Welcome Ishita">
-      <span class="welcome-word" aria-hidden="true"><span style="--i:0">W</span><span style="--i:1">e</span><span style="--i:2">l</span><span style="--i:3">c</span><span style="--i:4">o</span><span style="--i:5">m</span><span style="--i:6">e</span></span>
-      <em class="welcome-name" aria-hidden="true"><span style="--i:0">I</span><span style="--i:1">s</span><span style="--i:2">h</span><span style="--i:3">i</span><span style="--i:4">t</span><span style="--i:5">a</span></em>
-    </h1>
-    <p id="welcome-description">Good words bloom in good company.<br>Your little garden is ready.</p>
-    <button type="button" class="welcome-skip" data-close autofocus>Let’s play <span aria-hidden="true">↗</span></button>
-    <p class="welcome-signature">wordlle with Ishita</p>
+    <div class="bloom-copy">
+      <p id="bloom-title">A little sunshine, before the wordplay.</p>
+      <h1 id="bloom-welcome" aria-label="Welcome, Ishita"><span class="bloom-greeting" aria-hidden="true">Welcome,</span><em class="bloom-name" aria-hidden="true"><span>I</span><span>s</span><span>h</span><span>i</span><span>t</span><span>a</span></em></h1>
+      <p class="bloom-dedication">Good words bloom in good company.</p>
+    </div>
+    <div class="bloom-footer">
+      <div class="bloom-loading-copy"><p id="bloom-status" role="status" aria-live="polite">Opening your little garden…</p><p id="bloom-error" hidden role="alert"></p></div>
+      <button type="button" id="bloom-skip">Skip intro ↗</button>
+    </div>
   </dialog>
 
   <dialog id="host-dialog" aria-labelledby="host-title">
@@ -133,11 +143,6 @@
   <dialog id="invite-dialog" aria-labelledby="invite-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">Good company is worth sharing</p><h2 id="invite-title">Send a little invitation.</h2><p class="dialog-description" id="invite-description">Send this link to your people, or share the room code.</p><p class="share-code" id="share-code"></p><label for="invite-link">Your room link</label><input id="invite-link" readonly aria-describedby="copy-status"><button id="copy-button" class="button primary full-width">Copy invite link</button><p id="copy-status" class="small-note" role="status"></p></dialog>
   <dialog id="rules-dialog" aria-labelledby="rules-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">A field guide</p><h2 id="rules-title">How to bloom.</h2><p class="dialog-description">Guess the same mystery word as your friends, on your own private board. The host chooses 4, 5, 6, or 7 letters for the room.</p><ol class="rules-list"><li>You have <strong>six guesses and three minutes</strong> each round. Submit a real English word with your room’s chosen number of letters.</li><li><span class="rule-mark correct">Green</span> means the letter is in the right spot. <span class="rule-mark present">Gold</span> means it belongs somewhere else. <span class="rule-mark absent">Gray</span> means it’s not in the word. Repeated letters are marked only as often as they appear.</li><li>Every solve earns <strong>one point</strong>, whenever you find it. Other players can keep guessing after you finish.</li><li>The answer blooms when everyone is done or time runs out. The host starts the next round. Most points wins; ties are celebrated.</li></ol><p class="small-note">Invite friends before starting. Want a quiet moment? Solo rooms work, too.</p><button class="button primary full-width" data-close>Got it. Let’s grow.</button></dialog>
 
-  <div id="loading" class="loading-indicator" hidden role="status" aria-live="polite"><pre id="sunflower-loader" aria-hidden="true"> \ | / 
- -(@)- 
- / | \ 
-   |   
-  \|/  </pre><span id="loading-text">Planting your room…</span></div>
   <div id="notice" class="notice" hidden role="alert"><span id="notice-text"></span><button id="notice-close" aria-label="Dismiss message">×</button></div>
   <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 </body>

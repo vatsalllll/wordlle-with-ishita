@@ -1,12 +1,13 @@
 # wordlle with Ishita
 
-Private multiplayer word guessing, with a paper-cutout botanical UI, an animated ASCII sunflower loader, and a sunflower-bloom / “Welcome Ishita” intro. The greeting uses staggered letter reveals and a paper-lift transition; it is skippable and respects reduced-motion settings. No package dependencies, accounts, API keys, or paid word API.
+Private multiplayer word guessing with a paper-cutout game UI and a fullscreen Three.js night-garden loader. Two particle sunflowers grow from the bottom, bloom, and reveal “Welcome Ishita” before the page transitions into the game. No sunglasses or faces. Mobile-first, skippable, replayable, and respectful of reduced-motion settings. No accounts, API keys, or paid word API.
 
 ## Run
 
 Use Node **22.13+** (Node 24 recommended):
 
 ```sh
+npm ci
 npm start
 ```
 
@@ -16,7 +17,7 @@ Open **http://localhost:4318**. Choose **Start a room**, enter a name, select **
 npm test
 ```
 
-The 15 isolated Node tests cover repeated letters, room permissions, private boards, dictionary validation, attempts, score replay/concurrency, stale rounds, deadlines, persistence, cross-origin protection, room limits, and all four lengths. Browser smoke checks also exercised the actual animated loader, public multiplayer on desktop/mobile, colored feedback, invalid guesses, scores, ties, and rematches.
+The 15 isolated Node tests cover repeated letters, room permissions, private boards, dictionary validation, attempts, score replay/concurrency, stale rounds, deadlines, persistence, cross-origin protection, room limits, and all four lengths. Browser checks also exercised the real Three.js scene, fullscreen pending requests, concurrent room loading, replay, touch Skip, reduced motion, 360/390px mobile gameplay, and portrait-to-landscape resizing. Existing gameplay checks cover colored feedback, invalid guesses, private boards, scores, ties, and rematches.
 
 ## Rules
 
@@ -25,6 +26,17 @@ Everyone gets the same randomly selected word and an independent board. Six vali
 Each person who solves earns **one point**, regardless of speed or attempt count. Others can keep playing after someone solves. The answer is revealed only once everyone finishes or the server deadline expires. The host advances rounds; highest score wins, including ties. Rematches reset scores, retain the roster and word length, and reopen invitations.
 
 The classic five-letter rules follow the [New York Times Wordle help](https://help.nytimes.com/24611727334932-Wordle). Multiplayer, selectable lengths, scoring, and timed rounds are wordlle with Ishita variants; this is not an official NYT product.
+
+## Fullscreen sunflower loader
+
+The scene uses GPU shaders and three draw calls to assemble two natural sunflowers from luminous particles: growing stems, branching leaves, golden petals, and brown golden-angle seed cores. It uses Three.js WebGL 2 rather than requiring WebGPU. The visual approach draws on the [particle simulation reference](https://discourse.threejs.org/t/interactive-particle-simulation/67581) and [Three.js ShaderMaterial](https://threejs.org/docs/pages/ShaderMaterial.html); the flower artwork and choreography are procedural, not a prerecorded clip.
+
+The initial bloom runs while fonts and private room state are prepared. The greeting and exit wait for that work to settle. **Skip intro** settles the visual sequence but does not pretend network work has completed. Use the sun/replay control in the header to see the animation again.
+
+Subsequent requests lasting over 250ms show the same full-viewport, fully bloomed scene with the real pending-work message. They close as soon as the request finishes; guessing never has a forced six-second animation. Rendering pauses when the loader closes or the tab is hidden. Reduced motion shows a static bloom. If WebGL cannot initialize, an explicit message lets the player continue without the animation.
+
+Three.js **0.181.0** is pinned in `package-lock.json` and served locally from `public/vendor/three-0.181.0/`, including its MIT license. `npm ci` regenerates these browser assets using `scripts/vendor.mjs`; they are also committed so the Node-only runtime and Docker image can serve the app without a client build step.
+
 
 ## Fair play and privacy
 

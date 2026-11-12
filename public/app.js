@@ -1,5 +1,7 @@
+import { createBloomLoader } from '/sunflower-loader.js';
+
 const $ = (id) => document.getElementById(id);
-const dialogs = [...document.querySelectorAll('dialog')];
+const dialogs = [...document.querySelectorAll('dialog:not(#bloom-loader)')];
 const roomPattern = /^[A-Z0-9]{6}$/;
 const markLabels = { correct: 'right letter, right spot', present: 'right letter, different spot', absent: 'not in the word' };
 let room = null;
@@ -16,13 +18,21 @@ let revision = 0;
 let navigation = 0;
 let clockOffset = 0;
 let currentCode = '';
-let loadingCount = 0;
-let loaderInterval;
+let queuedDialog = null;
 let noticeTimeout;
 let lastBoard = '';
 let lastPlayers = '';
 let lastHistory = '';
 let lastAnnouncement = '';
+const bloom = createBloomLoader({
+  onClose() {
+    const nextDialog = queuedDialog;
+    queuedDialog = null;
+    if (nextDialog) showDialog(nextDialog);
+    renderControls();
+  },
+});
+const loading = bloom.loading;
 
 function savedName() {
   try { return localStorage.getItem('wordbloom-name') || ''; } catch { return ''; }
@@ -31,6 +41,7 @@ function rememberName(name) {
   try { localStorage.setItem('wordbloom-name', name); } catch { /* Private storage is optional. */ }
 }
 function showDialog(id) {
+  if (bloom.introActive) { queuedDialog = id; return; }
   const dialog = $(id);
   for (const other of dialogs) if (other !== dialog && other.open) other.close();
   if (!dialog.open) dialog.showModal();
@@ -45,24 +56,6 @@ function notice(message) {
   $('notice-text').textContent = message;
   $('notice').hidden = false;
   noticeTimeout = setTimeout(() => { $('notice').hidden = true; }, 6500);
-}
-function loading(active, message = 'A little something is growing…') {
-  loadingCount = Math.max(0, loadingCount + (active ? 1 : -1));
-  $('loading').hidden = loadingCount === 0;
-  if (active) {
-    $('loading-text').textContent = message;
-    (dialogs.find((dialog) => dialog.open) || document.body).append($('loading'));
-  }
-  if (loadingCount && !loaderInterval && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const frames = [' \\ | / \n -(@)- \n / | \\ \n   |   \n  \\|/  ', '  \\|/  \n --@-- \n  /|\\  \n   |   \n  \\|/  ', ' / | \\ \n -(@)- \n \\ | / \n   |   \n  \\|/  '];
-    let frame = 0;
-    loaderInterval = setInterval(() => { $('sunflower-loader').textContent = frames[++frame % frames.length]; }, 240);
-  }
-  if (!loadingCount) {
-    clearInterval(loaderInterval);
-    loaderInterval = null;
-    document.body.append($('loading'));
-  }
 }
 async function api(path, body) {
   let response;
@@ -132,6 +125,7 @@ function setView(view) {
 }
 function goHome() {
   navigation++;
+  queuedDialog = null;
   disconnect();
   room = null;
   currentCode = '';
@@ -146,6 +140,7 @@ function goHome() {
   window.scrollTo({ top: 0 });
 }
 function enterRoom(state) {
+  queuedDialog = null;
   for (const dialog of dialogs) if (dialog.open) dialog.close();
   currentCode = state.code;
   history.replaceState(null, '', `/?room=${state.code}`);
@@ -203,7 +198,7 @@ async function restoreRoom() {
 function self() { return room?.players.find((player) => player.id === room.selfId); }
 function isHost() { return room?.selfId === room?.hostId; }
 function timeLeft() { return room?.deadline ? Math.max(0, Math.ceil((room.deadline - Date.now() - clockOffset) / 1000)) : 0; }
-function canGuess() { return room?.status === 'playing' && self()?.status === 'playing' && connected && !busy && timeLeft() > 0; }
+function canGuess() { return room?.status === 'playing' && self()?.status === 'playing' && connected && !busy && !bloom.visible && timeLeft() > 0; }
 function applyState(state) {
   if (state.code !== currentCode) return;
   if (room?.code === state.code && state.serverTime < room.serverTime) return;
@@ -542,6 +537,7 @@ $('host-button').addEventListener('click', () => {
 });
 $('join-button').addEventListener('click', () => openJoin());
 $('rules-button').addEventListener('click', () => showDialog('rules-dialog'));
+$('replay-intro').addEventListener('click', () => { void bloom.intro(); renderControls(); });
 $('host-form').addEventListener('submit', (event) => void submitRoomForm(event, 'host'));
 $('join-form').addEventListener('submit', (event) => void submitRoomForm(event, 'join'));
 $('join-code').addEventListener('input', (event) => { event.target.value = event.target.value.toUpperCase(); });
@@ -577,9 +573,6 @@ for (const dialog of dialogs) {
     const bounds = dialog.getBoundingClientRect();
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
   });
-  dialog.addEventListener('close', () => {
-    if (dialog.contains($('loading'))) document.body.append($('loading'));
-  });
 }
 window.addEventListener('popstate', () => void restoreRoom());
 window.addEventListener('online', () => {
@@ -611,6 +604,4 @@ async function pollRoom() {
 }
 setInterval(() => void pollRoom(), 2500);
 setInterval(tick, 250);
-const welcomeTimer = setTimeout(() => $('welcome-dialog').close(), matchMedia('(prefers-reduced-motion: reduce)').matches ? 900 : 3900);
-$('welcome-dialog').addEventListener('close', () => { clearTimeout(welcomeTimer); void restoreRoom(); }, { once: true });
-showDialog('welcome-dialog');
+void bloom.intro(Promise.all([restoreRoom(), document.fonts.ready]));
