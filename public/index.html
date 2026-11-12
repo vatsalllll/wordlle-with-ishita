@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4eb">
+  <meta name="description" content="A little word game for your favorite people. Gather in a private room, find the same mystery word, and grow your score together.">
+  <title>Wordbloom — good words, better company.</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <svg class="svg-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="flower" viewBox="0 0 200 230">
+      <g fill="#dab969" stroke="#81682e" stroke-width="1.2">
+        <ellipse cx="100" cy="43" rx="12" ry="31"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(30 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(60 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(90 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(120 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(150 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(180 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(210 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(240 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(270 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(300 100 92)"/><ellipse cx="100" cy="43" rx="12" ry="31" transform="rotate(330 100 92)"/>
+      </g>
+      <path d="M100 122 Q92 176 106 225" fill="none" stroke="#435d43" stroke-width="4"/>
+      <path d="M99 179 Q51 178 46 145 Q84 143 99 179Z M100 201 Q144 190 150 163 Q112 164 100 201Z" fill="#8c9e75" stroke="#435d43" stroke-width="1.5"/>
+      <circle cx="100" cy="92" r="30" fill="#705333" stroke="#503d28" stroke-width="2"/>
+      <g fill="#c5a567"><circle cx="88" cy="80" r="2"/><circle cx="100" cy="76" r="2"/><circle cx="112" cy="82" r="2"/><circle cx="83" cy="93" r="2"/><circle cx="96" cy="89" r="2"/><circle cx="109" cy="95" r="2"/><circle cx="119" cy="94" r="2"/><circle cx="89" cy="105" r="2"/><circle cx="101" cy="105" r="2"/><circle cx="111" cy="108" r="2"/><circle cx="100" cy="116" r="2"/></g>
+    </symbol>
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs></svg>
+
+  <header class="site-header wrap">
+    <a href="/" class="brand" aria-label="Wordbloom home"><svg class="brand-flower" aria-hidden="true"><use href="#flower"/></svg>wordbloom<span class="brand-period">.</span></a>
+    <div class="header-right"><span class="header-note">A word game, in good company.</span><button class="text-button" id="rules-button">How to play <span aria-hidden="true">↗</span></button></div>
+  </header>
+
+  <main>
+    <section id="home-view" class="home-view wrap">
+      <div class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="small-sun" aria-hidden="true">✳</span> A little friendly competition</p>
+          <h1>Good words.<br>Better <em>company.</em></h1>
+          <p class="hero-description">Your favorite word game, with your favorite people. A private room. The same mystery word. A little room to bloom.</p>
+          <div class="hero-actions"><button class="button primary" id="host-button">Start a room <svg aria-hidden="true"><use href="#arrow"/></svg></button><button class="button secondary" id="join-button">Join friends</button></div>
+          <p class="hero-footnote">Free to play <span>·</span> 1–8 players <span>·</span> No account needed</p>
+        </div>
+        <div class="hero-art" aria-label="An illustrated sunflower beside example Wordle tiles spelling BLOOM">
+          <span class="art-orbit" aria-hidden="true"></span>
+          <svg class="hero-flower" aria-hidden="true"><use href="#flower"/></svg>
+          <div class="specimen-label" aria-hidden="true">Fig. 01<br><em>A bright idea.</em></div>
+          <div class="word-card">
+            <div class="card-meta"><span>A SMALL DAILY DELIGHT</span><span aria-hidden="true">✳</span></div>
+            <div class="example-word" aria-hidden="true"><span class="correct">B</span><span class="present">L</span><span class="absent">O</span><span class="correct">O</span><span class="correct">M</span></div>
+            <p>Some things are better<br><em>when you figure them out together.</em></p>
+            <span class="example-label">Illustrative tiles. Your word is a mystery.</span>
+          </div>
+          <div class="art-stamp" aria-hidden="true">GROW<br>AS YOU GO<span>✦</span></div>
+        </div>
+      </div>
+      <section class="how-it-grows" aria-labelledby="how-heading">
+        <div class="section-intro"><p class="eyebrow">Simple by nature</p><h2 id="how-heading">A little brain food.<br>A good time together.</h2></div>
+        <div class="how-step"><span class="step-number">01 /</span><h3>Gather your people</h3><p>Make a private room and share the link. Play with up to seven friends, or enjoy a solo round.</p></div>
+        <div class="how-step"><span class="step-number">02 /</span><h3>Find your word</h3><p>One shared word, 4–7 letters. Six guesses. Three minutes. Colored tiles help you find your way.</p></div>
+        <div class="how-step"><span class="step-number">03 /</span><h3>Let the points grow</h3><p>Every solve earns one point. No speed bonuses. Play 3, 5, or 10 rounds and celebrate every bloom.</p></div>
+      </section>
+    </section>
+
+    <section id="room-view" class="room-view wrap" hidden aria-label="Your game room">
+      <div class="room-topbar"><button id="home-button" class="text-button">← Back to garden</button><div class="connection" id="connection-status" role="status"><span class="connection-dot"></span><span id="connection-text">Connecting…</span></div></div>
+      <div class="room-heading"><div><p class="eyebrow" id="room-eyebrow">Your private patch</p><h1 id="room-title">Room to bloom.</h1></div><button id="invite-button" class="invite-button" aria-label="Invite friends"><span>ROOM <strong id="room-code"></strong></span><span class="invite-label">Invite friends ↗</span></button></div>
+      <div class="game-layout">
+        <div class="game-main">
+          <section id="lobby-panel" class="lobby-panel" aria-labelledby="lobby-heading">
+            <svg class="lobby-flower" aria-hidden="true"><use href="#flower"/></svg><p class="eyebrow">Good company starts here</p><h2 id="lobby-heading">The garden is gathering.</h2><p id="lobby-description"></p><div class="lobby-details"><span id="lobby-rounds"></span><span id="lobby-length"></span><span>3 minutes / round</span><span>6 guesses / word</span></div><button id="start-button" class="button primary">Let’s play <svg aria-hidden="true"><use href="#arrow"/></svg></button><p class="small-note" id="lobby-note"></p>
+          </section>
+          <section id="play-panel" class="play-panel" hidden aria-label="Word guessing board">
+            <div class="board-topline"><p id="board-caption">Your little patch</p><div id="timer" class="timer" aria-label="Time remaining"><span aria-hidden="true">◷</span> <span id="timer-value">3:00</span></div></div>
+            <div id="round-result" class="round-result" hidden aria-live="polite"><p class="eyebrow" id="result-label"></p><h2 id="result-heading"></h2><p id="result-description"></p><button id="next-button" class="button primary"></button></div>
+            <div id="board" class="board" role="group" aria-label="Your guesses"></div>
+            <p id="board-message" class="board-message" role="status" aria-live="polite"></p>
+            <div id="keyboard" class="keyboard" role="group" aria-label="Letter keyboard"></div>
+            <p class="keyboard-note">Type a word · Enter to plant it · ⌫ to rethink</p>
+          </section>
+        </div>
+        <aside class="room-sidebar" aria-label="Room scores and activity">
+          <section class="leaderboard-panel"><div class="panel-heading"><h2 id="leaderboard-heading">In the garden</h2><span id="player-count" class="count-pill"></span></div><p id="leaderboard-description" class="panel-description">A little friendly competition.</p><ol id="player-list" class="player-list"></ol><p class="scoring-note">One solve, one point.<br>There’s room for everyone to win.</p></section>
+          <section class="color-guide" aria-labelledby="color-heading"><p class="eyebrow" id="color-heading">Read the leaves</p><div><span class="mini-tile correct">A</span><span>Right letter, right spot</span></div><div><span class="mini-tile present">B</span><span>Right letter, new spot</span></div><div><span class="mini-tile absent">C</span><span>Not in the word</span></div></section>
+          <details id="history-panel" class="history-panel" hidden><summary>Our word garden <span id="history-count"></span></summary><ol id="history-list"></ol></details>
+        </aside>
+      </div>
+    </section>
+    <section id="offline-panel" class="offline-panel wrap" hidden aria-labelledby="offline-heading"><svg class="lobby-flower" aria-hidden="true"><use href="#flower"/></svg><p class="eyebrow">A moment in the shade</p><h1 id="offline-heading">The garden is resting.</h1><p id="offline-description">We can’t reach the game server right now. Your room may still be there when the connection returns.</p><div class="hero-actions"><button id="retry-button" class="button primary">Try again</button><button id="offline-home-button" class="button secondary">Back home</button></div></section>
+  </main>
+
+  <footer class="site-footer wrap"><span>wordbloom<span class="brand-period">.</span></span><p>A small game. A little connection. Something good growing.</p><span class="footer-flower" aria-hidden="true">✳</span></footer>
+
+  <dialog id="host-dialog" aria-labelledby="host-title">
+    <button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button>
+    <p class="eyebrow">Plant the first seed</p><h2 id="host-title">Make room for friends.</h2>
+    <p class="dialog-description">Choose a name, pick your rounds and word length, and we’ll take care of the word-growing.</p>
+    <form id="host-form">
+      <label for="host-name">Your name</label><input id="host-name" name="name" autocomplete="nickname" maxlength="24" required placeholder="What should we call you?">
+      <fieldset><legend>How many rounds?</legend><div class="round-options">
+        <label><input type="radio" name="rounds" value="3"><span>3 <small>A quick bloom</small></span></label>
+        <label><input type="radio" name="rounds" value="5" checked><span>5 <small>The sweet spot</small></span></label>
+        <label><input type="radio" name="rounds" value="10"><span>10 <small>Stay a while</small></span></label>
+      </div></fieldset>
+      <fieldset class="length-fieldset"><legend>Letters in each word</legend><div class="round-options">
+        <label><input type="radio" name="wordLength" value="4"><span>4 <small>Little leaves</small></span></label>
+        <label><input type="radio" name="wordLength" value="5" checked><span>5 <small>Classic</small></span></label>
+        <label><input type="radio" name="wordLength" value="6"><span>6 <small>Branch out</small></span></label>
+        <label><input type="radio" name="wordLength" value="7"><span>7 <small>Full bloom</small></span></label>
+      </div></fieldset>
+      <p class="form-error" id="host-error" role="alert"></p>
+      <button type="submit" class="button primary full-width">Create my room <svg aria-hidden="true"><use href="#arrow"/></svg></button>
+      <p class="small-note">Private by default. Just share your invite link.</p>
+    </form>
+  </dialog>
+  <dialog id="join-dialog" aria-labelledby="join-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">There’s a place for you</p><h2 id="join-title">Find your people.</h2><p id="join-description" class="dialog-description">Have an invite? Enter your room code and make yourself at home.</p><form id="join-form"><label for="join-name">Your name</label><input id="join-name" name="name" autocomplete="nickname" maxlength="24" required placeholder="What should we call you?"><label for="join-code">Room code</label><input id="join-code" class="code-input" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" pattern="[A-Za-z0-9]{6}" minlength="6" maxlength="6" required placeholder="ABCDEF"><p class="form-error" id="join-error" role="alert"></p><button type="submit" class="button primary full-width">Join the garden <svg aria-hidden="true"><use href="#arrow"/></svg></button><p class="small-note">Rooms welcome new players until the first round starts.</p></form></dialog>
+  <dialog id="invite-dialog" aria-labelledby="invite-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">Good company is worth sharing</p><h2 id="invite-title">Send a little invitation.</h2><p class="dialog-description" id="invite-description">Send this link to your people, or share the room code.</p><p class="share-code" id="share-code"></p><label for="invite-link">Your room link</label><input id="invite-link" readonly aria-describedby="copy-status"><button id="copy-button" class="button primary full-width">Copy invite link</button><p id="copy-status" class="small-note" role="status"></p></dialog>
+  <dialog id="rules-dialog" aria-labelledby="rules-title"><button type="button" class="dialog-close" data-close aria-label="Close dialog">×</button><p class="eyebrow">A field guide</p><h2 id="rules-title">How to bloom.</h2><p class="dialog-description">Guess the same mystery word as your friends, on your own private board. The host chooses 4, 5, 6, or 7 letters for the room.</p><ol class="rules-list"><li>You have <strong>six guesses and three minutes</strong> each round. Submit a real English word with your room’s chosen number of letters.</li><li><span class="rule-mark correct">Green</span> means the letter is in the right spot. <span class="rule-mark present">Gold</span> means it belongs somewhere else. <span class="rule-mark absent">Gray</span> means it’s not in the word. Repeated letters are marked only as often as they appear.</li><li>Every solve earns <strong>one point</strong>, whenever you find it. Other players can keep guessing after you finish.</li><li>The answer blooms when everyone is done or time runs out. The host starts the next round. Most points wins; ties are celebrated.</li></ol><p class="small-note">Invite friends before starting. Want a quiet moment? Solo rooms work, too.</p><button class="button primary full-width" data-close>Got it. Let’s grow.</button></dialog>
+
+  <div id="loading" class="loading-indicator" hidden role="status" aria-live="polite"><pre id="sunflower-loader" aria-hidden="true"> \ | / 
+ -(@)- 
+ / | \ 
+   |   
+  \|/  </pre><span id="loading-text">Planting your room…</span></div>
+  <div id="notice" class="notice" hidden role="alert"><span id="notice-text"></span><button id="notice-close" aria-label="Dismiss message">×</button></div>
+  <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

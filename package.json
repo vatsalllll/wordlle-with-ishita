@@ -1,0 +1,12 @@
+{
+  "name": "wordbloom",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Private, fair multiplayer word games with friends.",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/game.test.mjs"
+  }
+}
