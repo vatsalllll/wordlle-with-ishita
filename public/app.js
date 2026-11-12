@@ -876,7 +876,7 @@ document.addEventListener('visibilitychange', () => {
   else void returnVisible();
 });
 async function pollRoom() {
-  if (!room || !currentCode || document.hidden || busy || pollInFlight || (streamHealthy && Date.now() - lastSnapshotAt < 10000)) return;
+  if (!room || !currentCode || document.hidden || busy || pollInFlight) return;
   const code = currentCode;
   const version = navigation;
   const startedAt = revision;

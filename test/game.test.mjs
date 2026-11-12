@@ -654,7 +654,7 @@ test('silent departures pause before an offline deadline can turn the team into 
   assert.equal(paused.answer, null);
 });
 
-test('an active SSE sibling prevents another tab away beacon from pausing or handing off', async t => {
+test('a foreground sibling heartbeat cancels another tab away without pausing or handing off', async t => {
   let now = 1_800_000_000_000;
   const { server, host, guest, path } = await pair(t, { now: () => now, roundMs: 60_000 });
   const started = ok(await host.post(`${path}/start`));
@@ -665,13 +665,43 @@ test('an active SSE sibling prevents another tab away beacon from pausing or han
   });
   assert.equal(response.status, 200);
   ok(await host.post(`${path}/away`));
-  now += 9000;
+  now += 4000;
+  ok(await host.get(path));
+  now += 5000;
   const active = ok(await guest.get(path));
   assert.equal(active.status, 'playing');
   assert.equal(active.hostId, started.hostId);
   assert.equal(active.deadline, started.deadline);
   assert.equal(active.players.find(player => player.id === started.selfId).online, true);
   await response.body.cancel();
+});
+
+test('buffered SSE cannot keep departed players online or spend their saved clock', async t => {
+  let now = 1_800_000_000_000;
+  const { server, host, guest, path } = await pair(t, { now: () => now, roundMs: 60_000 });
+  const started = ok(await host.post(`${path}/start`));
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const response = await fetch(`${server.base}${path}/events`, {
+    headers: { Cookie: host.cookie }, signal: controller.signal,
+  });
+  assert.equal(response.status, 200);
+  now += 1000;
+  ok(await host.post(`${path}/away`));
+  ok(await guest.post(`${path}/away`));
+  now += 9000;
+  const paused = ok(await host.get(path));
+  assert.equal(paused.status, 'paused');
+  assert.equal(paused.pausedAt, started.serverTime + 1000);
+  assert.equal(paused.remainingMs, 59_000);
+  assert.equal(paused.answer, null);
+  assert.deepEqual(paused.history, []);
+  await response.body.cancel();
+  now += 15_000;
+  const stillPaused = ok(await host.get(path));
+  assert.equal(stillPaused.status, 'paused');
+  assert.equal(stillPaused.remainingMs, paused.remainingMs);
+  assert.equal(stillPaused.pausedAt, paused.pausedAt);
 });
 
 test('losing the sixth guess in the third round settles the answer and archives zero-point results', async t => {

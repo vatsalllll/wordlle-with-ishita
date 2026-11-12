@@ -17,7 +17,7 @@ Open **http://localhost:4318**. Choose **Start a room**, enter a name, select **
 npm test
 ```
 
-The 25 isolated Node tests cover rules, permissions, all four lengths, private boards and archives, score replay/concurrency, deadlines, pause/resume, host handoff, restart preservation, legacy migration, one-year retention, and zero-point final-round losses. Real-browser checks exercised two independent touch sessions, simultaneous guesses, private feedback, shared scoring, host departure, root-link discovery, same-team resume with saved attempts/time, third-round answer visibility, match/player histories, rematches, clipboard copying, and persisted high-contrast colors. Layout checks cover 360/390px portrait and 844px landscape. Earlier loader checks cover the real Three.js scene, fullscreen pending requests, replay, touch Skip, and reduced motion.
+The 26 isolated Node tests cover rules, permissions, all four lengths, private boards and archives, score replay/concurrency, deadlines, pause/resume, host handoff, restart preservation, legacy migration, one-year retention, zero-point final-round losses, and buffered-stream presence. Real-browser checks exercised two independent touch sessions, simultaneous guesses, private feedback, shared scoring, host departure, root-link discovery, same-team resume with saved attempts/time, third-round answer visibility, match/player histories, rematches, clipboard copying, and persisted high-contrast colors. Layout checks cover 360/390px portrait and 844px landscape. Earlier loader checks cover the real Three.js scene, fullscreen pending requests, replay, touch Skip, and reduced motion.
 
 ## Rules
 
@@ -28,6 +28,8 @@ Each person who solves earns **one point**, regardless of speed or attempt count
 The classic five-letter rules follow the [New York Times Wordle help](https://help.nytimes.com/24611727334932-Wordle). Multiplayer, selectable lengths, scoring, and timed rounds are wordlle with Ishita variants; this is not an official NYT product.
 
 ## Saved teams, history and sharing
+
+Visible game tabs refresh presence with authenticated HTTP every 2.5 seconds. SSE delivers fast updates but does not prove a player is still present: proxies may retain a stream after the page closes. Delayed stream closure never moves the recorded departure time.
 
 - **Continue with your team:** reopen the same link and browser. The home screen lists your unfinished rooms; **Continue with team** returns to the same roster, round, private guesses and scores. A paused room link also offers **Resume with team**.
 - **Pause and host handoff:** when everyone leaves, an eight-second presence grace confirms departure and saves the remaining clock. One person leaving does not pause an active teammate. An absent host hands control to an active member after the grace; any existing member can resume. Resuming an already-running game never extends its timer. Graceful server restarts save playing rounds as paused.

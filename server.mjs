@@ -162,18 +162,15 @@ export function createGameServer({
     return player;
   }
 
-  function connected(room, player) {
-    return [...(streams.get(room.code) || [])].some((client) => client.sessionId === player.sessionId);
-  }
-
-  function online(room, player) {
-    return connected(room, player) || (player.awayAt === null && now() - player.lastSeenAt < PRESENCE_GRACE);
+  // Proxies can retain SSE sockets after a page leaves; fresh client requests prove presence.
+  function online(player) {
+    return player.awayAt === null && now() - player.lastSeenAt < PRESENCE_GRACE;
   }
 
   function publicPlayers(room) {
     return room.players.map((p) => ({
       id: p.id, profileId: profileId(p.sessionId), name: p.name, score: p.score,
-      status: p.status, guessCount: p.guesses.length, online: online(room, p),
+      status: p.status, guessCount: p.guesses.length, online: online(p),
     }));
   }
 
@@ -279,7 +276,6 @@ export function createGameServer({
       if (room.players.every((p) => p.status !== 'playing')) changed = settle(room);
       else {
         const departures = room.players.map((p) => {
-          if (connected(room, p)) return null;
           const absentSince = p.awayAt ?? p.lastSeenAt;
           if (now() - absentSince < PRESENCE_GRACE) return null;
           return p.awayAt ?? p.lastSeenAt + PRESENCE_GRACE;
@@ -290,8 +286,8 @@ export function createGameServer({
       }
     }
     const host = room.players.find((p) => p.id === room.hostId);
-    if (!online(room, host) && now() - (host.awayAt ?? host.lastSeenAt) >= PRESENCE_GRACE) {
-      const replacement = room.players.find((p) => online(room, p));
+    if (!online(host) && now() - (host.awayAt ?? host.lastSeenAt) >= PRESENCE_GRACE) {
+      const replacement = room.players.find((p) => online(p));
       if (replacement) { room.hostId = replacement.id; changed = true; }
     }
     return changed;
@@ -522,7 +518,6 @@ export function createGameServer({
         let connections = streams.get(code);
         if (!connections) { connections = new Set(); streams.set(code, connections); }
         requireThat([...connections].filter((client) => client.sessionId === sid).length < 3, 429, 'This room is open in too many tabs.');
-        touch(room, me);
         res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
         res.flushHeaders();
         const client = { res, sessionId: sid };
@@ -531,10 +526,6 @@ export function createGameServer({
           connections.delete(client);
           if (!connections.size) streams.delete(code);
           if (!closing) {
-            if (!connected(room, me)) {
-              me.lastSeenAt = now();
-              if (me.awayAt !== null) me.awayAt = now();
-            }
             maintain(room);
             publish(room);
           }
@@ -609,7 +600,6 @@ export function createGameServer({
     for (const [key, window] of rateWindows) if (now() >= window.until) rateWindows.delete(key);
     for (const [code, room] of rooms) {
       if (now() - room.updated >= YEAR && !streams.has(code)) { rooms.delete(code); removeRoom.run(code); }
-      else if (streams.has(code)) save(room);
     }
     deleteSessions.run(now());
   }, 20_000).unref();
