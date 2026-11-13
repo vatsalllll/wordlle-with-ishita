@@ -89,15 +89,11 @@ No browser game can prevent outside word solvers, collusion, or cheating by some
 
 ## Hosting
 
-This is a **long-running Node service with persistent SQLite**, not a static site or a Vercel serverless function. Run one instance. Multiple replicas require shared transactional storage instead of process-local room state.
+This is a **long-running Node service with persistent SQLite**, not a static site or a Vercel serverless function ([Vercel does not persist local SQLite](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel)). Run one instance. Multiple replicas require shared transactional storage instead of process-local room state.
 
-For a quick public HTTPS preview, keep `npm start` running and run:
+**Production:** deployed on [Railway](https://railway.com)'s Free plan at **https://wordlle-with-ishita-production.up.railway.app** — project `wordlle-with-ishita`, service built from this repository's `Dockerfile` with a volume mounted at `/state` and variables `RAILWAY_RUN_UID=0` (volumes mount as root) and `COOKIE_SECURE=1`. The Free plan includes [$1 of usage per month](https://docs.railway.com/pricing/plans); this server idles around 17 MB RSS (~$0.25–0.50/month estimated), and if the credit ever runs out Railway stops deployments rather than billing. Redeploy with `railway up --detach`; manage saved games with `railway volume files`. SSE works on Railway; the client's 2.5-second authenticated polling remains as fallback for proxies without streaming, such as [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
 
-```sh
-cloudflared tunnel --url http://127.0.0.1:4318 --no-autoupdate --protocol http2
-```
-
-Use the HTTPS URL printed by `cloudflared`. The existing published preview is managed by two persistent local processes. **Quick Tunnel URLs are temporary:** they stop when the tunnel/server or this computer stops, change when a new tunnel starts, and have no uptime guarantee. This is not a permanent cloud deployment. The client uses 2.5-second authenticated state polling when SSE is unavailable, including on [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+Anonymous identities are per-hostname: moving to a new domain starts players fresh because HttpOnly cookies cannot move with them, even when the database is migrated.
 
 For always-on hosting, the included `Dockerfile` runs Node 24 as an unprivileged user. Deploy to a Node/container host with HTTPS and a persistent writable volume mounted at `/state`, owned by UID 1000. Keep exactly one instance and preserve the same public hostname for sessions and invites. Do not expose `.data/` or the repository as a static directory. No paid hosting resources are provisioned automatically.
 
